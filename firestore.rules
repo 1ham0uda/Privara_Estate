@@ -1,0 +1,337 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches request.auth.uid)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (required)
+    //   - role: string (required, enum: ['client', 'consultant', 'admin'])
+    //   - createdAt: timestamp (required)
+    //   - avatarUrl: string (optional)
+    //
+    // Collection: consultantProfiles
+    // Document ID: {userId} (matches request.auth.uid for consultants)
+    // Fields:
+    //   - uid: string (required)
+    //   - name: string (required)
+    //   - bio: string (required)
+    //   - experienceYears: number (required)
+    //   - specialties: list (required)
+    //   - completedConsultations: number (required)
+    //   - rating: number (required)
+    //   - professionalSummary: string (required)
+    //   - avatarUrl: string (optional)
+    //
+    // Collection: consultations
+    // Document ID: {consultationId}
+    // Fields:
+    //   - clientId: string (required)
+    //   - consultantId: string (optional)
+    //   - paymentStatus: string (required, enum: ['pending', 'paid'])
+    //   - status: string (required, enum: ['new', 'assigned', 'active', 'waiting_for_client', 'waiting_for_consultant', 'report_sent', 'completed', 'reassigned'])
+    //   - stage: string (required, enum: ['intake', 'need_analysis', 'shortlisting', 'comparison', 'meeting', 'final_recommendation', 'closure'])
+    //   - intake: map (required)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //   - completedAt: timestamp (optional)
+    //   - reportUrl: string (optional)
+    //   - reassignmentRequestStatus: string (optional, enum: ['none', 'pending', 'approved', 'rejected'])
+    //   - tags: list (optional)
+    //
+    // Collection: messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - caseId: string (required)
+    //   - senderId: string (required)
+    //   - senderName: string (required)
+    //   - senderRole: string (required, enum: ['client', 'consultant', 'admin'])
+    //   - text: string (required)
+    //   - imageUrl: string (optional)
+    //   - type: string (optional, enum: ['text', 'meeting_request', 'meeting_link', 'call_log'])
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: notifications
+    // Document ID: {notificationId}
+    // Fields:
+    //   - userId: string (required)
+    //   - title: string (required)
+    //   - message: string (required)
+    //   - link: string (optional)
+    //   - read: boolean (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: supportMessages
+    // Document ID: {messageId}
+    // Fields:
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - userEmail: string (required, email format)
+    //   - userRole: string (required, enum: ['client', 'consultant', 'admin', 'quality'])
+    //   - text: string (required)
+    //   - status: string (required, enum: ['open', 'closed', 'resolved'])
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isConsultant() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'consultant';
+    }
+
+    function isQuality() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'quality';
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && url.size() < 2000 && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^/.*"));
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
+        hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt', 'avatarUrl', 'status', 'phoneNumber', 'location', 'specialties', 'rating', 'bio', 'totalConsultations', 'activeConsultations', 'completedConsultations']) &&
+        (isAdmin() || (data.uid == request.auth.uid && data.email == request.auth.token.email)) &&
+        isValidEmail(data.email) &&
+        data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+        data.role in ['client', 'consultant', 'admin', 'quality'] &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidConsultantProfile(data) {
+      return hasRequiredFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary']) &&
+        hasOnlyAllowedFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary', 'avatarUrl']) &&
+        data.uid is string &&
+        data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+        data.bio is string && data.bio.size() < 2000 &&
+        data.experienceYears is number && data.experienceYears >= 0 &&
+        data.specialties is list && data.specialties.size() < 20 &&
+        data.completedConsultations is number && data.completedConsultations >= 0 &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.professionalSummary is string && data.professionalSummary.size() < 5000;
+    }
+
+    function isValidConsultation(data) {
+      return hasRequiredFields(['clientId', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt']) &&
+        hasOnlyAllowedFields(['clientId', 'clientName', 'clientAvatarUrl', 'consultantId', 'consultantName', 'qualitySpecialistId', 'qualitySpecialistName', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt', 'completedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'reassignmentRequestStatus', 'tags']) &&
+        data.clientId is string &&
+        (!('clientName' in data) || data.clientName is string) &&
+        (!('clientAvatarUrl' in data) || data.clientAvatarUrl == null || data.clientAvatarUrl == "" || isValidUrl(data.clientAvatarUrl)) &&
+        data.paymentStatus in ['pending', 'paid'] &&
+        data.status in ['new', 'assigned', 'active', 'waiting_for_client', 'waiting_for_consultant', 'report_sent', 'completed', 'reassigned'] &&
+        data.stage in ['intake', 'need_analysis', 'shortlisting', 'comparison', 'meeting', 'final_recommendation', 'closure'] &&
+        (!('reassignmentRequestStatus' in data) || data.reassignmentRequestStatus in ['none', 'pending', 'approved', 'rejected']) &&
+        (!('reportUrl' in data) || data.reportUrl == null || data.reportUrl == "" || isValidUrl(data.reportUrl)) &&
+        (!('meetingRecordingUrl' in data) || data.meetingRecordingUrl == null || data.meetingRecordingUrl == "" || isValidUrl(data.meetingRecordingUrl)) &&
+        data.intake is map &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['caseId', 'senderId', 'senderName', 'senderRole', 'text', 'clientId', 'createdAt']) &&
+        hasOnlyAllowedFields(['caseId', 'senderId', 'senderName', 'senderRole', 'text', 'clientId', 'consultantId', 'imageUrl', 'audioUrl', 'type', 'createdAt']) &&
+        data.caseId is string &&
+        data.senderId == request.auth.uid &&
+        data.senderName is string && data.senderName.size() > 0 && data.senderName.size() < 100 &&
+        data.senderRole in ['client', 'consultant', 'admin', 'quality'] &&
+        data.text is string && data.text.size() >= 0 && data.text.size() < 5000 &&
+        data.clientId is string &&
+        (!('consultantId' in data) || data.consultantId == null || data.consultantId is string) &&
+        (!('imageUrl' in data) || data.imageUrl == null || data.imageUrl == "" || isValidUrl(data.imageUrl)) &&
+        (!('audioUrl' in data) || data.audioUrl == null || data.audioUrl == "" || isValidUrl(data.audioUrl)) &&
+        (!('type' in data) || data.type in ['text', 'image', 'audio', 'meeting_request', 'meeting_link', 'call_log']) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAuditReport(data) {
+      return hasRequiredFields(['caseId', 'specialistId', 'specialistName', 'status', 'classification', 'meetingStatus', 'notes', 'createdAt']) &&
+        hasOnlyAllowedFields(['caseId', 'specialistId', 'specialistName', 'status', 'classification', 'meetingStatus', 'notes', 'createdAt']) &&
+        data.caseId is string &&
+        data.specialistId == request.auth.uid &&
+        data.status in ['pending', 'completed'] &&
+        data.classification in ['critical', 'non-critical'] &&
+        data.meetingStatus in ['recorded', 'not-recorded', 'failed'] &&
+        data.notes is string && data.notes.size() < 5000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return hasRequiredFields(['userId', 'title', 'message', 'read', 'createdAt']) &&
+        hasOnlyAllowedFields(['userId', 'title', 'message', 'link', 'read', 'createdAt']) &&
+        data.userId is string &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+        data.message is string && data.message.size() > 0 && data.message.size() < 1000 &&
+        (!('link' in data) || data.link == null || data.link == "" || isValidUrl(data.link)) &&
+        data.read is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidChangeRequest(data) {
+      return hasRequiredFields(['caseId', 'clientId', 'consultantId', 'reason', 'status', 'createdAt']) &&
+        hasOnlyAllowedFields(['caseId', 'clientId', 'consultantId', 'reason', 'status', 'createdAt', 'note']) &&
+        data.caseId is string &&
+        data.clientId is string &&
+        data.consultantId is string &&
+        data.reason is string && data.reason.size() > 0 && data.reason.size() < 2000 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('note' in data) || data.note == null || data.note == "" || data.note is string) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidSupportMessage(data) {
+      return hasRequiredFields(['userId', 'userName', 'userEmail', 'userRole', 'text', 'status', 'createdAt', 'replies']) &&
+        hasOnlyAllowedFields(['userId', 'userName', 'userEmail', 'userRole', 'text', 'status', 'createdAt', 'replies']) &&
+        (data.userId == request.auth.uid || isAdmin()) &&
+        data.userName is string && data.userName.size() > 0 && data.userName.size() < 100 &&
+        isValidEmail(data.userEmail) &&
+        data.userRole in ['client', 'consultant', 'admin', 'quality'] &&
+        data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+        data.status in ['open', 'closed', 'resolved'] &&
+        data.createdAt is timestamp &&
+        data.replies is list;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (
+        isOwner(userId) || 
+        isAdmin() || 
+        resource.data.email == request.auth.token.email || 
+        resource.data.role == 'admin' || 
+        resource.data.role == 'quality'
+      );
+      allow create: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == 'client' || isAdmin());
+      allow update: if (isOwner(userId) || isAdmin()) && 
+        isValidUser(request.resource.data) && 
+        (request.resource.data.role == resource.data.role || isAdmin()) &&
+        areImmutableFieldsUnchanged(['uid', 'createdAt']);
+    }
+
+    match /consultantProfiles/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidConsultantProfile(request.resource.data);
+      allow update: if isAdmin() && isValidConsultantProfile(request.resource.data) &&
+        areImmutableFieldsUnchanged(['uid']);
+    }
+
+    match /consultations/{consultationId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId || request.auth.uid == resource.data.qualitySpecialistId || isAdmin());
+      allow create: if isAuthenticated() && isValidConsultation(request.resource.data) && (request.auth.uid == request.resource.data.clientId || isAdmin());
+      allow update: if isAuthenticated() && isValidConsultation(request.resource.data) && 
+        (request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId || isAdmin()) &&
+        areImmutableFieldsUnchanged(['clientId', 'createdAt']);
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) && 
+         (
+           get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.clientId == request.auth.uid ||
+           get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.consultantId == request.auth.uid ||
+           get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.qualitySpecialistId == request.auth.uid
+         )
+        )
+      );
+      allow create: if isAuthenticated() && isValidMessage(request.resource.data) && (
+        request.auth.uid == request.resource.data.clientId ||
+        request.auth.uid == request.resource.data.consultantId ||
+        isAdmin()
+      );
+    }
+
+    match /auditReports/{reportId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        request.auth.uid == resource.data.specialistId ||
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) && 
+         get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.qualitySpecialistId == request.auth.uid)
+      );
+      allow create: if isQuality() && isValidAuditReport(request.resource.data);
+      allow update: if isQuality() && isValidAuditReport(request.resource.data) && request.auth.uid == resource.data.specialistId;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+      allow update: if (isOwner(resource.data.userId) || isAdmin()) && 
+        request.resource.data.read is bool &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+
+    match /changeRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        request.auth.uid == resource.data.clientId ||
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) && 
+         get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.clientId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && isValidChangeRequest(request.resource.data) && request.auth.uid == request.resource.data.clientId;
+      allow update: if isAdmin() && isValidChangeRequest(request.resource.data);
+    }
+
+    match /supportMessages/{messageId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidSupportMessage(request.resource.data);
+      allow update: if isAdmin() && isValidSupportMessage(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'createdAt']);
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
