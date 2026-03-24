@@ -1,4 +1,5 @@
 export type UserRole = 'client' | 'consultant' | 'admin' | 'quality';
+export type StaffRole = Exclude<UserRole, 'client'>;
 
 export interface UserProfile {
   uid: string;
@@ -10,12 +11,21 @@ export interface UserProfile {
   phoneNumber?: string;
   location?: string;
   specialties?: string[];
+  experienceYears?: number;
   rating?: number;
   bio?: string;
   status?: 'active' | 'deactivated';
   totalConsultations: number;
   activeConsultations: number;
   completedConsultations: number;
+}
+
+export interface SupportReply {
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  text: string;
+  createdAt: any;
 }
 
 export interface SupportMessage {
@@ -27,12 +37,11 @@ export interface SupportMessage {
   text: string;
   status: 'open' | 'closed';
   createdAt: any;
-  replies?: {
-    senderId: string;
-    senderName: string;
-    text: string;
-    createdAt: any;
-  }[];
+  updatedAt?: any;
+  closedAt?: any;
+  closedById?: string;
+  closedByName?: string;
+  replies?: SupportReply[];
 }
 
 export interface ConsultantProfile {
@@ -75,6 +84,8 @@ export interface IntakeData {
   preferredDeliveryTime: string;
   notes: string;
   projectsInMind?: string;
+  selectedConsultantUid?: string;
+  selectedConsultantName?: string;
 }
 
 export interface ConsultationCase {

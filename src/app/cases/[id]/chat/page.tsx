@@ -6,27 +6,22 @@ import Link from 'next/link';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { chatService, consultationService, userService, consultantService } from '@/src/lib/db';
 import { Message, ConsultationCase, UserProfile } from '@/src/types';
-import { Button, Card } from '@/src/components/UI';
+import { Button } from '@/src/components/UI';
 import { 
   Send, 
   ArrowLeft, 
   User, 
-  Shield, 
-  Clock,
+  Shield,
   MoreVertical,
   Info,
   MessageSquare,
   Image as ImageIcon,
-  Loader2,
   X,
   Phone,
-  Video,
   Calendar,
   Link as LinkIcon,
   Mic,
   MicOff,
-  PhoneOff,
-  Monitor,
   Play,
   Pause
 } from 'lucide-react';
@@ -49,39 +44,20 @@ export default function ChatPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showActions, setShowActions] = useState(false);
-  const [isCalling, setIsCalling] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
+  const [showCallInfo, setShowCallInfo] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isRecordingCall, setIsRecordingCall] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const callRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const callChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
 
   const { t, isRTL, language } = useLanguage();
   const isQuality = profile?.role === 'quality';
-
-  useEffect(() => {
-    if (isCalling) {
-      callTimerRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (callTimerRef.current) clearInterval(callTimerRef.current);
-      setCallDuration(0);
-    }
-    return () => {
-      if (callTimerRef.current) clearInterval(callTimerRef.current);
-    };
-  }, [isCalling]);
+  const canOpenCallFallback = profile?.role === 'client' || profile?.role === 'consultant';
 
   const [otherUser, setOtherUser] = useState<UserProfile | null>(null);
 
@@ -150,7 +126,7 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size must be less than 5MB');
+        toast.error(t('chat.image_size_error'));
         return;
       }
       setSelectedImage(file);
@@ -191,7 +167,7 @@ export default function ChatPage() {
         setRecordingTime(prev => prev + 1);
       }, 1000);
     } catch (error) {
-      toast.error('Failed to access microphone');
+      toast.error(t('chat.audio_access_failed'));
     }
   };
 
@@ -224,7 +200,7 @@ export default function ChatPage() {
         'audio'
       );
     } catch (error) {
-      toast.error('Failed to send voice note');
+      toast.error(t('chat.audio_send_failed'));
     } finally {
       setUploadingAudio(false);
     }
@@ -270,7 +246,7 @@ export default function ChatPage() {
       setSelectedImage(null);
       setImagePreview(null);
     } catch (error) {
-      toast.error('Failed to send message');
+      toast.error(t('chat.send_failed'));
     } finally {
       setSending(false);
     }
@@ -291,10 +267,10 @@ export default function ChatPage() {
         undefined,
         'meeting_request'
       );
-      toast.success('Meeting request sent');
+      toast.success(t('chat.meeting_requested_success'));
       setShowActions(false);
     } catch (error) {
-      toast.error('Failed to request meeting');
+      toast.error(t('chat.meeting_failed'));
     }
   };
 
@@ -314,87 +290,27 @@ export default function ChatPage() {
         undefined,
         'meeting_link'
       );
+      toast.success(t('chat.link_sent_success'));
       setShowActions(false);
     } catch (error) {
-      toast.error('Failed to send meeting link');
+      toast.error(t('chat.link_failed'));
     }
   };
 
-  const startCall = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      callRecorderRef.current = mediaRecorder;
-      callChunksRef.current = [];
+  const handleCallAction = () => {
+    if (!consultation) return;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          callChunksRef.current.push(e.data);
-        }
-      };
+    const hasOtherParty = profile?.role === 'client'
+      ? Boolean(consultation.consultantId)
+      : Boolean(consultation.clientId);
 
-      mediaRecorder.start();
-      setIsRecordingCall(true);
-      setIsCalling(true);
-      toast.success('Connecting...');
-    } catch (error) {
-      toast.error('Failed to access microphone for call recording');
-      // Still start call for simulation if user wants, but warn
-      setIsCalling(true);
-    }
-  };
-
-  const endCall = async () => {
-    if (!profile || !caseId || !consultation) return;
-    const duration = formatDuration(callDuration);
-    setIsCalling(false);
-
-    // Stop call recording
-    if (callRecorderRef.current && isRecordingCall) {
-      callRecorderRef.current.stop();
-      setIsRecordingCall(false);
-      
-      callRecorderRef.current.onstop = async () => {
-        const mimeType = callRecorderRef.current?.mimeType || 'audio/webm';
-        const audioBlob = new Blob(callChunksRef.current, { type: mimeType });
-        if (audioBlob.size > 0) {
-          try {
-            const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-            const file = new File([audioBlob], `call_recording_${Date.now()}.${ext}`, { type: mimeType });
-            const audioUrl = await chatService.uploadChatAudio(caseId as string, file);
-            
-            // Add to consultation callRecordings
-            const currentRecordings = consultation.callRecordings || [];
-            await consultationService.updateConsultation(caseId as string, {
-              callRecordings: [...currentRecordings, audioUrl]
-            });
-            
-            toast.success(t('call.recorded_success') || 'Call recorded and saved for quality review');
-          } catch (error) {
-            console.error('Failed to save call recording', error);
-          }
-        }
-        // Stop all tracks
-        callRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-      };
+    if (!hasOtherParty) {
+      toast.error(t('call.party_unavailable'));
+      return;
     }
 
-    try {
-      await chatService.sendMessage(
-        caseId as string,
-        profile.uid,
-        profile.displayName || profile.email || t(`common.${profile.role}`),
-        profile.role,
-        `📞 ${t('chat.call_ended')} - ${t('chat.call_duration')}: ${duration}`,
-        consultation.clientId,
-        consultation.consultantId,
-        '',
-        undefined,
-        'call_log'
-      );
-    } catch (error) {
-      console.error('Failed to log call');
-    }
+    setShowActions(false);
+    setShowCallInfo(true);
   };
 
   if (authLoading || !consultation) return null;
@@ -423,14 +339,18 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              className="p-2 rounded-full text-gray-500 hover:text-black"
-              onClick={startCall}
-            >
-              <Phone className="w-5 h-5" />
-            </Button>
-            
+            {canOpenCallFallback && (
+              <Button 
+                type="button"
+                variant="ghost" 
+                className="p-2 rounded-full text-gray-500 hover:text-black"
+                onClick={handleCallAction}
+                title={t('call.unavailable_title')}
+              >
+                <Phone className="w-5 h-5" />
+              </Button>
+            )}
+
             <div className="relative">
               <Button 
                 variant="ghost" 
@@ -630,46 +550,69 @@ export default function ChatPage() {
         {/* Hidden Audio Player */}
         <audio ref={audioPlayerRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
 
-        {/* Call Overlay */}
-        {isCalling && (
-          <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center text-white p-6">
-            <div className="w-32 h-32 bg-gray-800 rounded-full flex items-center justify-center mb-8 relative">
-              <User className="w-16 h-16 text-gray-400" />
-              <div className="absolute inset-0 border-4 border-emerald-500 rounded-full animate-ping opacity-20" />
-            </div>
-            
-            <h2 className="text-2xl font-bold mb-2">
-              {getOtherUserName()}
-            </h2>
-            <p className="text-emerald-400 font-mono mb-12 flex items-center gap-2">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              {formatDuration(callDuration)}
-            </p>
+        {showCallInfo && (
+          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-gray-100 p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400 mb-2">{t('chat.call')}</p>
+                  <h3 className="text-xl font-bold text-gray-900">{t('call.unavailable_title')}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCallInfo(false)}
+                  className="p-2 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label={t('call.close')}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            <div className="flex items-center gap-8">
-              <button 
-                onClick={() => setIsMuted(!isMuted)}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'bg-gray-700 text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}
-              >
-                {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-              </button>
-              
-              <button 
-                onClick={endCall}
-                className="w-20 h-20 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-2xl transition-transform hover:scale-110"
-              >
-                <PhoneOff className="w-8 h-8" />
-              </button>
+              <div className="space-y-4">
+                <p className="text-sm leading-6 text-gray-600">{t('call.unavailable_body')}</p>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {profile?.role === 'client' ? t('call.unavailable_next_client') : t('call.unavailable_next_consultant')}
+                </div>
+              </div>
 
-              <button className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
-                <Monitor className="w-6 h-6" />
-              </button>
-            </div>
+              <div className={`mt-6 flex flex-col sm:flex-row gap-3 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
+                {profile?.role === 'client' && (
+                  <Button
+                    type="button"
+                    className="flex-1 h-11 rounded-xl"
+                    onClick={async () => {
+                      await handleRequestMeeting();
+                      setShowCallInfo(false);
+                    }}
+                  >
+                    <Calendar className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                    {t('call.send_meeting_request')}
+                  </Button>
+                )}
 
-            <div className="mt-12 text-center text-gray-500 text-sm">
-              <p className="flex items-center justify-center gap-2">
-                <Shield className="w-4 h-4" /> {t('call.recording')}
-              </p>
+                {profile?.role === 'consultant' && (
+                  <Button
+                    type="button"
+                    className="flex-1 h-11 rounded-xl"
+                    onClick={async () => {
+                      await handleProvideMeetingLink();
+                      setShowCallInfo(false);
+                    }}
+                  >
+                    <LinkIcon className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                    {t('call.share_meeting_link')}
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 h-11 rounded-xl"
+                  onClick={() => setShowCallInfo(false)}
+                >
+                  {t('call.close')}
+                </Button>
+              </div>
             </div>
           </div>
         )}

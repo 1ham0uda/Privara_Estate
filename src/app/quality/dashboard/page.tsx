@@ -22,6 +22,7 @@ import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 import { useLanguage } from '@/src/context/LanguageContext';
+import SupportModal from '@/src/components/SupportModal';
 
 export default function QualityDashboard() {
   const { t, isRTL, language } = useLanguage();
@@ -30,6 +31,7 @@ export default function QualityDashboard() {
   const [reports, setReports] = useState<Record<string, QualityAuditReport[]>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'audited'>('all');
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -56,9 +58,19 @@ export default function QualityDashboard() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
           <p className="text-gray-500 mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
-          <Button variant="outline" className="w-full" onClick={() => window.location.href = 'mailto:support@example.com'}>
+          <Button variant="outline" className="w-full" onClick={() => setIsSupportModalOpen(true)}>
             {t('consultant.message_admin')}
           </Button>
+          {profile ? (
+            <SupportModal
+              isOpen={isSupportModalOpen}
+              onClose={() => setIsSupportModalOpen(false)}
+              userId={profile.uid}
+              userName={profile.displayName}
+              userEmail={profile.email}
+              userRole={profile.role}
+            />
+          ) : null}
         </Card>
       </div>
     );
@@ -87,7 +99,7 @@ export default function QualityDashboard() {
             <p className="text-gray-500 mt-1">{t('quality.dashboard_subtitle')}</p>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="relative">
               <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 ${isRTL ? 'right-3' : 'left-3'}`} />
               <input 
@@ -98,6 +110,7 @@ export default function QualityDashboard() {
                 className={`${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-black/5`}
               />
             </div>
+            <Button variant="outline" as={Link} href="/quality/support">{t('admin.dashboard.tab.support')}</Button>
             <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
               {(['all', 'pending', 'audited'] as const).map((f) => (
                 <button
@@ -115,7 +128,7 @@ export default function QualityDashboard() {
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
                 <ClipboardCheck className="w-6 h-6 text-blue-500" />
               </div>
@@ -126,7 +139,7 @@ export default function QualityDashboard() {
             </div>
           </Card>
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
                 <Clock className="w-6 h-6 text-amber-500" />
               </div>
@@ -137,7 +150,7 @@ export default function QualityDashboard() {
             </div>
           </Card>
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center">
                 <CheckCircle2 className="w-6 h-6 text-emerald-500" />
               </div>
@@ -209,6 +222,16 @@ export default function QualityDashboard() {
           )}
         </div>
       </main>
+      {profile ? (
+        <SupportModal
+          isOpen={isSupportModalOpen}
+          onClose={() => setIsSupportModalOpen(false)}
+          userId={profile.uid}
+          userName={profile.displayName}
+          userEmail={profile.email}
+          userRole={profile.role}
+        />
+      ) : null}
     </div>
   );
 }

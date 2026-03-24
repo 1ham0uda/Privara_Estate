@@ -1,18 +1,35 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { auth } from '@/src/lib/firebase';
 import { userService } from '@/src/lib/db';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { Button, Card } from '@/src/components/UI';
-import { Shield, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { Shield, Mail, Lock, User as UserIcon } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
 
+function getRegisterErrorMessage(error: any, t: (key: string) => string) {
+  switch (error?.code) {
+    case 'auth/email-already-in-use':
+      return t('auth.register.error.email_in_use');
+    case 'auth/invalid-email':
+      return t('auth.register.error.invalid_email');
+    case 'auth/weak-password':
+      return t('auth.register.error.weak_password');
+    case 'auth/operation-not-allowed':
+      return t('auth.register.error.operation_not_allowed');
+    default:
+      return error?.message || t('auth.register.error.generic');
+  }
+}
+
 export default function RegisterPage() {
+  const { t, isRTL } = useLanguage();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,109 +46,82 @@ export default function RegisterPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    let createdUser: User | null = null;
+    let profileCreated = false;
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      
-      await updateProfile(user, { displayName: name });
-      
-      // Check if a profile already exists (e.g. pre-created by admin by email)
-      const existingProfile = await userService.getUserProfile(user.uid);
-      
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedName = name.trim();
+
+      const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+      createdUser = userCredential.user;
+
+      await updateProfile(createdUser, { displayName: normalizedName });
+
       await userService.createUserProfile({
-        uid: user.uid,
-        email: user.email!,
-        displayName: name,
-        role: existingProfile?.role || 'client',
+        uid: createdUser.uid,
+        email: createdUser.email || normalizedEmail,
+        displayName: normalizedName,
+        role: 'client',
         createdAt: new Date(),
+        status: 'active',
         totalConsultations: 0,
         activeConsultations: 0,
-        completedConsultations: 0
+        completedConsultations: 0,
       });
 
+      profileCreated = true;
       await refreshProfile();
-      toast.success('Account created successfully!');
-      const targetPath = existingProfile?.role === 'consultant' ? '/consultant/dashboard' : '/client/dashboard';
-      router.push(targetPath);
+      toast.success(t('auth.register.success'));
+      router.push('/client/dashboard');
     } catch (error: any) {
-      if (error.code === 'auth/operation-not-allowed') {
-        toast.error('Email/Password registration is not enabled in Firebase Console. Please enable it or use Google Sign-in.');
-      } else {
-        toast.error(error.message || 'Failed to create account');
+      if (createdUser && !profileCreated) {
+        try {
+          await createdUser.delete();
+        } catch (rollbackError) {
+          console.error('Failed to rollback auth user after registration error:', rollbackError);
+        }
       }
+
+      const message = createdUser && !profileCreated && !error?.code
+        ? t('auth.register.error.profile_sync_failed')
+        : getRegisterErrorMessage(error, t);
+
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
-
-  const handleGoogleRegister = async () => {
-    setLoading(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      // Check if profile exists, if not create one
-      let profile = await userService.getUserProfile(user.uid);
-      if (!profile) {
-        const role = 'client';
-
-        profile = {
-          uid: user.uid,
-          email: user.email!,
-          displayName: user.displayName || 'User',
-          role: role,
-          createdAt: new Date(),
-          totalConsultations: 0,
-          activeConsultations: 0,
-          completedConsultations: 0
-        };
-        await userService.createUserProfile(profile);
-      }
-
-      await refreshProfile();
-      toast.success('Signed in with Google successfully!');
-      const targetPath = profile.role === 'admin' ? '/admin/dashboard' : 
-                        profile.role === 'consultant' ? '/consultant/dashboard' : 
-                        '/client/dashboard';
-      router.push(targetPath);
-    } catch (error: any) {
-      toast.error(error.message || 'Google sign-in failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isRTL = false;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8" dir={isRTL ? 'rtl' : 'ltr'}>
       <Toaster position="top-center" />
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link href="/" className="flex justify-center items-center space-x-2 mb-6">
+        <Link href="/" className="flex justify-center items-center gap-2 mb-6">
           <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
             <Shield className="text-white w-6 h-6" />
           </div>
           <span className="text-2xl font-bold tracking-tight">Privately</span>
         </Link>
         <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
-          Create an account
+          {t('auth.register_title')}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Join Privately to start your consultation journey
+          {t('auth.register_subtitle')}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <Card className="py-8 px-4 sm:px-10 shadow-xl border-none" hover={false}>
           <form className="space-y-6" onSubmit={handleRegister}>
-            <div className="text-left">
+            <div className={isRTL ? 'text-right' : 'text-left'}>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                Full Name
+                {t('auth.full_name')}
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400" />
+                <div className={`absolute inset-y-0 ${isRTL ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
+                  <UserIcon className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
                   id="name"
@@ -140,18 +130,18 @@ export default function RegisterPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all"
-                  placeholder="John Doe"
+                  className={`block w-full ${isRTL ? 'pr-10 pl-3' : 'pl-10 pr-3'} py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all`}
+                  placeholder={t('auth.full_name_placeholder')}
                 />
               </div>
             </div>
 
-            <div className="text-left">
+            <div className={isRTL ? 'text-right' : 'text-left'}>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email Address
+                {t('auth.email')}
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <div className={`absolute inset-y-0 ${isRTL ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
                   <Mail className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
@@ -162,18 +152,19 @@ export default function RegisterPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all"
-                  placeholder="you@example.com"
+                  className={`block w-full ${isRTL ? 'pr-10 pl-3' : 'pl-10 pr-3'} py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all`}
+                  placeholder={t('auth.email_placeholder')}
+                  dir="ltr"
                 />
               </div>
             </div>
 
-            <div className="text-left">
+            <div className={isRTL ? 'text-right' : 'text-left'}>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+                {t('auth.password')}
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <div className={`absolute inset-y-0 ${isRTL ? 'right-0 pr-3' : 'left-0 pl-3'} flex items-center pointer-events-none`}>
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
@@ -184,8 +175,8 @@ export default function RegisterPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all"
-                  placeholder="••••••••"
+                  className={`block w-full ${isRTL ? 'pr-10 pl-3' : 'pl-10 pr-3'} py-2 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition-all`}
+                  placeholder={t('auth.password_placeholder')}
                 />
               </div>
             </div>
@@ -200,16 +191,19 @@ export default function RegisterPage() {
                   className="focus:ring-black h-4 w-4 text-black border-gray-300 rounded"
                 />
               </div>
-              <div className="ml-3 text-sm">
+              <div className={`${isRTL ? 'mr-3' : 'ml-3'} text-sm`}>
                 <label htmlFor="terms" className="text-gray-500">
-                  I agree to the <Link href="#" className="text-black font-medium underline">Terms of Service</Link> and <Link href="#" className="text-black font-medium underline">Privacy Policy</Link>.
+                  {t('auth.agree_to')}{' '}
+                  <Link href="#" className="text-black font-medium underline">{t('auth.terms')}</Link>{' '}
+                  {t('auth.and')}{' '}
+                  <Link href="#" className="text-black font-medium underline">{t('auth.privacy')}</Link>
                 </label>
               </div>
             </div>
 
             <div>
               <Button type="submit" className="w-full h-12 rounded-xl" loading={loading}>
-                Create Account
+                {t('auth.register_button')}
               </Button>
             </div>
           </form>
@@ -220,54 +214,14 @@ export default function RegisterPage() {
                 <div className="w-full border-t border-gray-200" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or continue with</span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <Button 
-                variant="outline" 
-                className="w-full h-12 rounded-xl flex items-center justify-center gap-2"
-                onClick={handleGoogleRegister}
-                loading={loading}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 12-4.53z"
-                  />
-                </svg>
-                Google
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Already have an account?</span>
+                <span className="px-2 bg-white text-gray-500">{t('auth.already_have')}</span>
               </div>
             </div>
 
             <div className="mt-6">
               <Link href="/login">
                 <Button variant="outline" className="w-full h-12 rounded-xl">
-                  Sign in instead
+                  {t('auth.signin_instead')}
                 </Button>
               </Link>
             </div>

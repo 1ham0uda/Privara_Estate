@@ -28,17 +28,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const refreshProfile = async () => {
-    if (user) {
-      const userProfile = await userService.getUserProfile(user.uid);
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      setUser(null);
+      setProfile(null);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const userProfile = await userService.getUserProfile(currentUser.uid);
+      setUser(currentUser);
       setProfile(userProfile);
+    } catch (error) {
+      console.error('Error refreshing auth profile:', error);
+      setProfile(null);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('Auth state changed:', firebaseUser?.uid);
+      setLoading(true);
+
       try {
         setUser(firebaseUser);
+
         if (firebaseUser) {
           console.log('Fetching profile for:', firebaseUser.uid);
           const userProfile = await userService.getUserProfile(firebaseUser.uid);

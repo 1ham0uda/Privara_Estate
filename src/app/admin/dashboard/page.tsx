@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { consultationService, consultantService, userService, qualityService } from '@/src/lib/db';
-import { ConsultationCase, ConsultantProfile, UserProfile, QualityAuditReport, SupportMessage } from '@/src/types';
+import { ConsultationCase, ConsultantProfile, UserProfile, QualityAuditReport } from '@/src/types';
 import { Card, Badge, Button } from '@/src/components/UI';
 import { 
   Users, 
@@ -34,6 +34,7 @@ import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/fire
 import { db } from '@/src/lib/firebase';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { supportService, settingsService } from '@/src/lib/db';
+import AdminSupportWorkspace from '@/src/components/support/AdminSupportWorkspace';
 
 export default function AdminDashboard() {
   const { profile, loading } = useRoleGuard(['admin']);
@@ -49,9 +50,6 @@ export default function AdminDashboard() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'conversations' | 'staff' | 'quality_reports' | 'support'>('overview');
-  const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]);
-  const [activeSupportId, setActiveSupportId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState('');
   const [showStaffDetailsModal, setShowStaffDetailsModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -71,9 +69,6 @@ export default function AdminDashboard() {
         setQualityReports(data);
       });
 
-      const unsubscribeSupport = supportService.subscribeToSupportMessages(undefined, (data) => {
-        setSupportMessages(data);
-      });
       
       consultantService.getAllConsultants().then(setConsultants);
       
@@ -96,7 +91,6 @@ export default function AdminDashboard() {
       return () => {
         unsubscribe();
         unsubscribeReports();
-        unsubscribeSupport();
       };
     }
   }, [profile]);
@@ -155,26 +149,11 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSendReply = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeSupportId || !replyText.trim() || !profile) return;
 
-    try {
-      await supportService.replyToSupportMessage(activeSupportId, profile.uid, profile.displayName, replyText);
-      setReplyText('');
-      toast.success(t('common.success'));
-    } catch (error) {
-      toast.error(t('common.error'));
-    }
-  };
 
-  const handleCloseTicket = async (id: string) => {
-    try {
-      await supportService.closeSupportMessage(id);
-      toast.success(t('common.success'));
-    } catch (error) {
-      toast.error(t('common.error'));
-    }
+  const startConsultantAssignment = (consultation: ConsultationCase) => {
+    setAssigningCaseId(consultation.id);
+    setSelectedConsultantId(consultation.intake.selectedConsultantUid || '');
   };
 
   const handleAssign = async (caseId: string) => {
@@ -382,6 +361,18 @@ export default function AdminDashboard() {
                           <div>
                             <h3 className="font-bold text-gray-900">{c.clientName || t('common.client')}</h3>
                             <p className="text-xs text-gray-500">{t('client.goal')}: <span className="capitalize">{t(`intake.goal_${c.intake.goal}`)}</span> • {t('client.started_on')} {formatDate(c.createdAt, language)}</p>
+                            {c.intake.selectedConsultantName ? (
+                              <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
+                                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700 border border-blue-100">
+                                  {t('intake.requested_consultant_label')}: {c.intake.selectedConsultantName}
+                                </span>
+                                {c.intake.selectedConsultantUid ? (
+                                  <Link href={`/consultants/${c.intake.selectedConsultantUid}`} className="text-blue-600 hover:text-blue-700 underline underline-offset-2">
+                                    {t('intake.view_consultant_profile')}
+                                  </Link>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         
@@ -395,14 +386,16 @@ export default function AdminDashboard() {
                               >
                                 <option value="">{t('admin.dashboard.case.assignConsultant')}</option>
                                 {consultants.map(con => (
-                                  <option key={con.uid} value={con.uid}>{con.name}</option>
+                                  <option key={con.uid} value={con.uid}>
+                                    {con.name}{c.intake.selectedConsultantUid === con.uid ? ` • ${t('intake.requested_consultant_short')}` : ''}
+                                  </option>
                                 ))}
                               </select>
                               <Button onClick={() => handleAssign(c.id)} className="h-10 px-4 rounded-lg text-sm">{t('admin.dashboard.case.assignConsultant')}</Button>
                               <Button variant="ghost" onClick={() => setAssigningCaseId(null)} className="h-10 px-4 rounded-lg text-sm">{t('common.cancel')}</Button>
                             </div>
                           ) : (
-                            <Button onClick={() => setAssigningCaseId(c.id)} className="h-10 px-6 rounded-lg">{t('admin.dashboard.case.assignConsultant')}</Button>
+                            <Button onClick={() => startConsultantAssignment(c)} className="h-10 px-6 rounded-lg">{t('admin.dashboard.case.assignConsultant')}</Button>
                           )}
 
                           {assigningQualityCaseId === c.id ? (
@@ -780,108 +773,7 @@ export default function AdminDashboard() {
             </div>
           </div>
         ) : activeTab === 'support' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[600px]">
-            <Card className="lg:col-span-1 p-0 bg-white border-none shadow-sm overflow-hidden flex flex-col" hover={false}>
-              <div className="p-4 border-b border-gray-100">
-                <h3 className="font-bold">{t('admin.dashboard.tab.support')}</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {supportMessages.length > 0 ? (
-                  supportMessages.map(msg => (
-                    <div 
-                      key={msg.id} 
-                      onClick={() => setActiveSupportId(msg.id)}
-                      className={`p-4 border-b border-gray-50 cursor-pointer transition-colors hover:bg-gray-50 ${activeSupportId === msg.id ? 'bg-blue-50' : ''}`}
-                    >
-                      <div className={`flex items-center justify-between mb-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <span className="text-xs font-bold text-gray-900">{msg.userName}</span>
-                        <Badge variant={msg.status === 'open' ? 'warning' : 'success'} className="text-[9px]">
-                          {t(`support.${msg.status}`)}
-                        </Badge>
-                      </div>
-                      <p className={`text-xs text-gray-500 line-clamp-1 ${isRTL ? 'text-right' : ''}`}>{msg.text}</p>
-                      <p className={`text-[10px] text-gray-400 mt-1 ${isRTL ? 'text-right' : ''}`}>{formatDate(msg.createdAt, language)}</p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-gray-400 text-sm">
-                    {t('support.no_messages')}
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            <Card className="lg:col-span-2 p-0 bg-white border-none shadow-sm overflow-hidden flex flex-col" hover={false}>
-              {activeSupportId ? (
-                <>
-                  {(() => {
-                    const activeMsg = supportMessages.find(m => m.id === activeSupportId);
-                    if (!activeMsg) return null;
-                    return (
-                      <>
-                        <div className={`p-4 border-b border-gray-100 flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                          <div>
-                            <h3 className="font-bold">{activeMsg.userName}</h3>
-                            <p className="text-xs text-gray-500">{activeMsg.userEmail} • {t(`auth.demo_${activeMsg.userRole}`)}</p>
-                          </div>
-                          {activeMsg.status === 'open' && (
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="text-red-600 border-red-200 hover:bg-red-50"
-                              onClick={() => handleCloseTicket(activeMsg.id)}
-                            >
-                              {t('support.close_ticket')}
-                            </Button>
-                          )}
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                          <div className={`flex flex-col ${isRTL ? 'items-end' : 'items-start'}`}>
-                            <div className="bg-gray-100 p-4 rounded-2xl rounded-tl-none max-w-[80%]">
-                              <p className="text-sm text-gray-800">{activeMsg.text}</p>
-                              <p className="text-[10px] text-gray-400 mt-2">{formatDate(activeMsg.createdAt, language)}</p>
-                            </div>
-                          </div>
-                          
-                          {activeMsg.replies?.map((reply, i) => {
-                            const isAdminReply = reply.senderId !== activeMsg.userId;
-                            return (
-                              <div key={i} className={`flex flex-col ${isAdminReply ? (isRTL ? 'items-start' : 'items-end') : (isRTL ? 'items-end' : 'items-start')}`}>
-                                <div className={`${isAdminReply ? 'bg-black text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'} p-4 rounded-2xl max-w-[80%]`}>
-                                  <p className="text-sm">{reply.text}</p>
-                                  <p className={`text-[10px] mt-2 ${isAdminReply ? 'text-gray-400' : 'text-gray-500'}`}>{formatDate(reply.createdAt, language)}</p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {activeMsg.status === 'open' && (
-                          <form onSubmit={handleSendReply} className="p-4 border-t border-gray-100 bg-gray-50">
-                            <div className="flex gap-2">
-                              <input 
-                                type="text" 
-                                value={replyText}
-                                onChange={(e) => setReplyText(e.target.value)}
-                                placeholder={t('support.type_reply')}
-                                className={`flex-1 px-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm ${isRTL ? 'text-right' : ''}`}
-                              />
-                              <Button type="submit" disabled={!replyText.trim()}>
-                                <MessageSquare className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </form>
-                        )}
-                      </>
-                    );
-                  })()}
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-gray-400">
-                  <p>{t('support.no_messages')}</p>
-                </div>
-              )}
-            </Card>
-          </div>
+          <AdminSupportWorkspace />
         ) : null}
       </main>
       

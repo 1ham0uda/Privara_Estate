@@ -652,7 +652,7 @@ export const consultantService = {
     try {
       const docRef = doc(db, 'consultantProfiles', uid);
       const docSnap = await getDoc(docRef);
-      return docSnap.exists() ? (docSnap.data() as ConsultantProfile) : null;
+      return docSnap.exists() ? ({ uid: docSnap.id, ...docSnap.data() } as ConsultantProfile) : null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
       return null;
@@ -664,7 +664,7 @@ export const consultantService = {
     try {
       const q = query(collection(db, 'consultantProfiles'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data() as ConsultantProfile);
+      return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as ConsultantProfile));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -692,62 +692,108 @@ export const consultantService = {
 };
 
 export const supportService = {
-  async sendSupportMessage(userId: string, userName: string, userEmail: string, userRole: UserRole, text: string): Promise<void> {
+  async sendSupportMessage(userId: string, userName: string, userEmail: string, userRole: UserRole, text: string): Promise<string> {
     const path = 'supportMessages';
+    const trimmedText = text.trim();
+
+    if (!trimmedText) {
+      throw new Error('Support message text is required');
+    }
+
     try {
-      await addDoc(collection(db, 'supportMessages'), {
+      const newDoc = await addDoc(collection(db, 'supportMessages'), {
         userId,
         userName,
         userEmail,
         userRole,
-        text,
+        text: trimmedText,
         status: 'open',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         replies: []
       });
 
-      // Notify Admin
       const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
       const adminSnapshot = await getDocs(adminQuery);
-      adminSnapshot.forEach(adminDoc => {
-        notificationService.sendNotification(
-          adminDoc.id,
-          'طلب دعم جديد',
-          `قام ${userName} بإرسال طلب دعم جديد.`,
-          `/admin/support`
-        );
-      });
+      await Promise.all(
+        adminSnapshot.docs.map((adminDoc) =>
+          notificationService.sendNotification(
+            adminDoc.id,
+            'طلب دعم جديد',
+            `قام ${userName} بإرسال طلب دعم جديد.`,
+            `/admin/support?ticketId=${newDoc.id}`
+          )
+        )
+      );
+
+      return newDoc.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
+      return '';
     }
   },
 
-  async replyToSupportMessage(messageId: string, senderId: string, senderName: string, text: string): Promise<void> {
+  async replyToSupportMessage(messageId: string, senderId: string, senderName: string, senderRole: UserRole, text: string): Promise<void> {
     const path = `supportMessages/${messageId}`;
+    const trimmedText = text.trim();
+
+    if (!trimmedText) {
+      throw new Error('Support reply text is required');
+    }
+
     try {
       const docRef = doc(db, 'supportMessages', messageId);
       const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) return;
+      if (!docSnap.exists()) {
+        throw new Error('Support ticket not found');
+      }
 
       const data = docSnap.data();
-      const replies = data.replies || [];
+      if (data.status === 'closed') {
+        throw new Error('This support ticket is already closed');
+      }
+
+      const replies = Array.isArray(data.replies) ? [...data.replies] : [];
       replies.push({
         senderId,
         senderName,
-        text,
-        createdAt: new Date(), // Using client date for array push, Firestore will store it
+        senderRole,
+        text: trimmedText,
+        createdAt: new Date(),
       });
 
-      await updateDoc(docRef, { replies });
+      await updateDoc(docRef, {
+        replies,
+        updatedAt: serverTimestamp(),
+      });
 
-      // Notify User if sender is admin
-      if (data.userId !== senderId) {
-        const supportPath = data.userRole === 'client' ? `/client/support?messageId=${messageId}` : `/consultant/support?messageId=${messageId}`;
-        notificationService.sendNotification(
+      const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
+      const adminSnapshot = senderRole === 'admin' ? null : await getDocs(adminQuery);
+      const supportPath = data.userRole === 'client'
+        ? `/client/support?ticketId=${messageId}`
+        : data.userRole === 'consultant'
+          ? `/consultant/support?ticketId=${messageId}`
+          : data.userRole === 'quality'
+            ? `/quality/support?ticketId=${messageId}`
+            : `/admin/support?ticketId=${messageId}`;
+
+      if (senderRole === 'admin') {
+        await notificationService.sendNotification(
           data.userId,
           'رد على طلب الدعم',
-          `قام الدعم الفني بالرد على طلبك.`,
+          `قام فريق الدعم بالرد على طلبك.`,
           supportPath
+        );
+      } else if (adminSnapshot) {
+        await Promise.all(
+          adminSnapshot.docs.map((adminDoc) =>
+            notificationService.sendNotification(
+              adminDoc.id,
+              'رد جديد على طلب الدعم',
+              `قام ${senderName} بالرد على تذكرة الدعم.`,
+              `/admin/support?ticketId=${messageId}`
+            )
+          )
         );
       }
     } catch (error) {
@@ -755,29 +801,53 @@ export const supportService = {
     }
   },
 
-  async closeSupportMessage(messageId: string): Promise<void> {
+  async closeSupportMessage(messageId: string, closedById?: string, closedByName?: string): Promise<void> {
     const path = `supportMessages/${messageId}`;
     try {
       const docRef = doc(db, 'supportMessages', messageId);
-      await updateDoc(docRef, { status: 'closed' });
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        throw new Error('Support ticket not found');
+      }
+
+      const data = docSnap.data();
+      await updateDoc(docRef, {
+        status: 'closed',
+        updatedAt: serverTimestamp(),
+        closedAt: serverTimestamp(),
+        ...(closedById ? { closedById } : {}),
+        ...(closedByName ? { closedByName } : {}),
+      });
+
+      await notificationService.sendNotification(
+        data.userId,
+        'تم إغلاق طلب الدعم',
+        `تم إغلاق تذكرتك من قبل فريق الدعم.`,
+        data.userRole === 'client'
+          ? `/client/support?ticketId=${messageId}`
+          : data.userRole === 'consultant'
+            ? `/consultant/support?ticketId=${messageId}`
+            : `/quality/support?ticketId=${messageId}`
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   },
 
-  subscribeToSupportMessages(userId?: string, callback?: (messages: any[]) => void) {
+  subscribeToSupportMessages(userId?: string, callback?: (messages: any[]) => void, onError?: (error: Error) => void) {
     const path = 'supportMessages';
-    let q;
-    if (userId) {
-      q = query(collection(db, 'supportMessages'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
-    } else {
-      q = query(collection(db, 'supportMessages'), orderBy('createdAt', 'desc'));
-    }
+    const q = userId
+      ? query(collection(db, 'supportMessages'), where('userId', '==', userId), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'supportMessages'), orderBy('createdAt', 'desc'));
 
     return onSnapshot(q, (snapshot) => {
       const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (callback) callback(messages);
     }, (error) => {
+      if (onError) {
+        onError(error as Error);
+        return;
+      }
       handleFirestoreError(error, OperationType.LIST, path);
     });
   }

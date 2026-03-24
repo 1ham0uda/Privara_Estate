@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { UserRole } from '@/src/types';
 
 export function useRoleGuard(allowedRoles: UserRole[]) {
-  const { profile, loading } = useAuth();
+  const { profile, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -15,13 +15,15 @@ export function useRoleGuard(allowedRoles: UserRole[]) {
     if (!loading) {
       if (!profile) {
         router.push(`/login?redirect=${pathname}`);
+      } else if (profile.status === 'deactivated') {
+        signOut().finally(() => router.push('/login'));
       } else if (!allowedRoles.includes(profile.role)) {
         // Redirect to their own dashboard if they are in the wrong place
         router.push(`/${profile.role}/dashboard`);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, loading, router, pathname, allowedRolesString]);
+  }, [profile, loading, router, pathname, allowedRolesString, signOut]);
 
   return { profile, loading };
 }

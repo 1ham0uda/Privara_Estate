@@ -6,9 +6,9 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import SupportWorkspace from '@/src/components/support/SupportWorkspace';
 
-export default function ConsultantSupportPage() {
+export default function QualitySupportPage() {
   const { t, isRTL } = useLanguage();
-  const { loading } = useRoleGuard(['consultant']);
+  const { loading } = useRoleGuard(['quality']);
 
   if (loading) return null;
 
@@ -20,7 +20,7 @@ export default function ConsultantSupportPage() {
           <h1 className="text-3xl font-bold text-gray-900">{t('support.title')}</h1>
           <p className="text-gray-500 mt-2">{t('support.page_description')}</p>
         </div>
-        <SupportWorkspace role="consultant" />
+        <SupportWorkspace role="quality" />
       </main>
     </div>
   );

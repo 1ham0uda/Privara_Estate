@@ -226,7 +226,7 @@ service cloud.firestore {
 
     function isValidSupportMessage(data) {
       return hasRequiredFields(['userId', 'userName', 'userEmail', 'userRole', 'text', 'status', 'createdAt', 'replies']) &&
-        hasOnlyAllowedFields(['userId', 'userName', 'userEmail', 'userRole', 'text', 'status', 'createdAt', 'replies']) &&
+        hasOnlyAllowedFields(['userId', 'userName', 'userEmail', 'userRole', 'text', 'status', 'createdAt', 'updatedAt', 'closedAt', 'closedById', 'closedByName', 'replies']) &&
         (data.userId == request.auth.uid || isAdmin()) &&
         data.userName is string && data.userName.size() > 0 && data.userName.size() < 100 &&
         isValidEmail(data.userEmail) &&
@@ -234,6 +234,10 @@ service cloud.firestore {
         data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
         data.status in ['open', 'closed', 'resolved'] &&
         data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+        (!('closedAt' in data) || data.closedAt is timestamp) &&
+        (!('closedById' in data) || data.closedById is string) &&
+        (!('closedByName' in data) || data.closedByName is string) &&
         data.replies is list;
     }
 
@@ -326,7 +330,7 @@ service cloud.firestore {
     match /supportMessages/{messageId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && isValidSupportMessage(request.resource.data);
-      allow update: if isAdmin() && isValidSupportMessage(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'createdAt']);
+      allow update: if isValidSupportMessage(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'userEmail', 'userRole', 'createdAt']) && ((isAdmin()) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId && request.resource.data.text == resource.data.text && request.resource.data.status == resource.data.status && request.resource.data.userName == resource.data.userName));
     }
 
     match /settings/{settingId} {

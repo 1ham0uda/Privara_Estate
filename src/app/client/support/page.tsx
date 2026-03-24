@@ -1,23 +1,26 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { useAuth } from '@/src/context/AuthContext';
-import { supportService } from '@/src/lib/db';
-import { Card, Button } from '@/src/components/UI';
-import { useLanguage } from '@/src/context/LanguageContext';
-import { formatDate } from '@/src/lib/utils';
+import React from 'react';
 import Navbar from '@/src/components/Navbar';
-import SupportMessages from './SupportMessages';
+import { useLanguage } from '@/src/context/LanguageContext';
+import { useRoleGuard } from '@/src/hooks/useRoleGuard';
+import SupportWorkspace from '@/src/components/support/SupportWorkspace';
 
 export default function ClientSupportPage() {
   const { t, isRTL } = useLanguage();
+  const { loading } = useRoleGuard(['client']);
+
+  if (loading) return null;
 
   return (
     <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
-      <main className="max-w-4xl mx-auto px-4 py-12">
-        <h1 className="text-2xl font-bold mb-8">{t('support.title')}</h1>
-        <SupportMessages />
+      <main className="max-w-7xl mx-auto px-4 py-12">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">{t('support.title')}</h1>
+          <p className="text-gray-500 mt-2">{t('support.page_description')}</p>
+        </div>
+        <SupportWorkspace role="client" />
       </main>
     </div>
   );

@@ -1,22 +1,23 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { Button, Card } from '@/src/components/UI';
 import { paymentService } from '@/src/lib/paymentService';
 import { consultationService, settingsService } from '@/src/lib/db';
-import { Shield, CreditCard, Lock, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { IntakeData } from '@/src/types';
+import { Shield, CreditCard, Lock, CheckCircle2, ArrowLeft, UserCheck, ExternalLink } from 'lucide-react';
 import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
-
 import { useLanguage } from '@/src/context/LanguageContext';
 
 export default function PaymentPage() {
-  const isRTL = false;
+  const { t } = useLanguage();
   const { profile, loading } = useRoleGuard(['client']);
   const router = useRouter();
-  const [intakeData, setIntakeData] = useState<any>(null);
+  const [intakeData, setIntakeData] = useState<IntakeData | null>(null);
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [consultationFee, setConsultationFee] = useState(500);
@@ -27,13 +28,22 @@ export default function PaymentPage() {
       router.push('/client/new-consultation');
       return;
     }
+
     try {
-      setIntakeData(JSON.parse(data));
+      const parsed = JSON.parse(data) as IntakeData;
+      if (!parsed.selectedConsultantUid || !parsed.selectedConsultantName) {
+        localStorage.removeItem('pending_intake');
+        toast.error(t('payment.missing_consultant'));
+        router.push('/client/new-consultation');
+        return;
+      }
+      setIntakeData(parsed);
     } catch (error) {
       console.error('Failed to parse intake data:', error);
       localStorage.removeItem('pending_intake');
-      toast.error('There was an issue loading your consultation details. Please start over.');
+      toast.error(t('payment.load_error'));
       router.push('/client/new-consultation');
+      return;
     }
 
     const fetchSettings = async () => {
@@ -42,18 +52,21 @@ export default function PaymentPage() {
         setConsultationFee(settings.consultationFee);
       }
     };
-    fetchSettings();
-  }, [router]);
+
+    void fetchSettings();
+  }, [router, t]);
 
   const handlePayment = async () => {
+    if (!intakeData) return;
+
     setProcessing(true);
     try {
       const result = await paymentService.processPayment(consultationFee);
       if (result.success) {
         const caseId = await consultationService.createConsultation(
-          profile!.uid, 
-          profile!.displayName || profile!.email || 'Client', 
-          profile!.avatarUrl || undefined, 
+          profile!.uid,
+          profile!.displayName || profile!.email || 'Client',
+          profile!.avatarUrl || undefined,
           intakeData
         );
         localStorage.removeItem('pending_intake');
@@ -76,26 +89,50 @@ export default function PaymentPage() {
     <div className="min-h-screen bg-gray-50" dir="ltr">
       <Navbar forceLanguage="en" />
       <Toaster />
-      
+
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          {/* Summary */}
           <div>
-            <button 
+            <button
               onClick={() => router.back()}
               className="flex items-center text-gray-500 hover:text-black mb-8 transition-colors"
             >
               <ArrowLeft className="w-4 h-4 mr-2" /> Back to Intake
             </button>
-            
+
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">Complete Payment</h1>
-            
+
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <div className="space-y-6">
                 <div className="flex justify-between items-center pb-6 border-b border-gray-100">
                   <span className="text-gray-500">Service</span>
                   <span className="font-bold">Premium Real Estate Consultation</span>
                 </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center border border-gray-100">
+                        <UserCheck className="w-5 h-5 text-gray-700" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('intake.selected_consultant_label')}</p>
+                        <p className="font-bold text-gray-900">{intakeData.selectedConsultantName}</p>
+                        <p className="text-sm text-gray-500 mt-1">{t('payment.selected_consultant_helper')}</p>
+                      </div>
+                    </div>
+
+                    {intakeData.selectedConsultantUid ? (
+                      <Link href={`/consultants/${intakeData.selectedConsultantUid}`}>
+                        <Button type="button" variant="outline" className="h-11 rounded-xl">
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          {t('intake.view_consultant_profile')}
+                        </Button>
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Goal</span>
@@ -130,7 +167,6 @@ export default function PaymentPage() {
             </div>
           </div>
 
-          {/* Payment Form */}
           <div className="flex flex-col justify-center">
             {success ? (
               <Card className="bg-white border-none shadow-xl p-12 text-center" hover={false}>
@@ -159,8 +195,8 @@ export default function PaymentPage() {
                     <div className="flex items-center gap-2 text-xs text-gray-400 justify-center">
                       <Lock className="w-3 h-3" /> Secure SSL Encryption
                     </div>
-                    <Button 
-                      onClick={handlePayment} 
+                    <Button
+                      onClick={handlePayment}
                       className="w-full h-14 text-lg rounded-2xl"
                       loading={processing}
                     >

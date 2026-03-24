@@ -67,6 +67,12 @@ export default function AdminCaseDetails() {
     }
   }, [caseId]);
 
+  useEffect(() => {
+    if (consultation?.intake.selectedConsultantUid && !consultation.consultantId) {
+      setSelectedConsultantId(consultation.intake.selectedConsultantUid);
+    }
+  }, [consultation?.id, consultation?.consultantId, consultation?.intake.selectedConsultantUid]);
+
   const handleAssignQuality = async () => {
     if (!selectedQualityId) {
       toast.error('Please select a quality specialist');
@@ -212,7 +218,9 @@ export default function AdminCaseDetails() {
                         >
                           <option value="">{t('admin.case_details.choose_consultant')}</option>
                           {allConsultants.filter(c => c.uid !== consultation.consultantId).map(c => (
-                            <option key={c.uid} value={c.uid}>{c.name} ({c.experienceYears}y exp)</option>
+                            <option key={c.uid} value={c.uid}>
+                              {c.name} ({c.experienceYears}y exp){consultation.intake.selectedConsultantUid === c.uid ? ` • ${t('intake.requested_consultant_short')}` : ''}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -312,6 +320,27 @@ export default function AdminCaseDetails() {
                     <p className="text-xs text-gray-500">{client?.email}</p>
                   </div>
                 </div>
+                {consultation.intake.selectedConsultantName ? (
+                  <div className={`flex items-center gap-4 pt-6 border-t border-gray-100 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+                    <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+                      <User className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-400 font-bold uppercase">{t('intake.requested_consultant_label')}</p>
+                      <p className="font-bold">{consultation.intake.selectedConsultantName}</p>
+                      <div className={`mt-2 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        {consultation.intake.selectedConsultantUid ? (
+                          <Link href={`/consultants/${consultation.intake.selectedConsultantUid}`} className="text-xs text-blue-600 hover:text-blue-700 underline underline-offset-2">
+                            {t('intake.view_consultant_profile')}
+                          </Link>
+                        ) : null}
+                        {!consultation.consultantId && consultation.intake.selectedConsultantUid === selectedConsultantId ? (
+                          <span className="text-xs text-emerald-600 font-medium">{t('intake.requested_consultant_prefill')}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <div className={`flex items-center gap-4 pt-6 border-t border-gray-100 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
                   <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
                     <User className="w-6 h-6 text-gray-300" />

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { getAdminAuth, getAdminDb } from '@/src/lib/firebase-admin';
+import type { StaffRole } from '@/src/types';
+
+const allowedStaffRoles = new Set<StaffRole>(['admin', 'consultant', 'quality']);
+
+function errorResponse(error: string, code: string, status: number) {
+  return NextResponse.json({ error, code }, { status });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,7 +16,7 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('Authorization');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return errorResponse('Unauthorized', 'unauthorized', 401);
     }
 
     const idToken = authHeader.split('Bearer ')[1];
@@ -17,10 +24,31 @@ export async function POST(req: NextRequest) {
 
     const adminDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
     if (!adminDoc.exists || adminDoc.data()?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return errorResponse('Forbidden', 'forbidden', 403);
     }
 
-    const { email, password, displayName, role, specialties, bio, phoneNumber, experienceYears } = await req.json();
+    const body = await req.json();
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+    const role = body.role as StaffRole;
+    const phoneNumber = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : '';
+    const bio = typeof body.bio === 'string' ? body.bio.trim() : '';
+    const specialties = typeof body.specialties === 'string' ? body.specialties : '';
+    const rawExperienceYears = body.experienceYears;
+    const experienceYears = Number(rawExperienceYears ?? 0);
+
+    if (!email || !password || !displayName || !role) {
+      return errorResponse('Missing required fields', 'missing-required-fields', 400);
+    }
+
+    if (!allowedStaffRoles.has(role)) {
+      return errorResponse('Invalid staff role', 'invalid-role', 400);
+    }
+
+    if (!Number.isFinite(experienceYears) || experienceYears < 0) {
+      return errorResponse('Invalid experience years', 'invalid-experience', 400);
+    }
 
     let userRecord;
     try {
@@ -31,17 +59,20 @@ export async function POST(req: NextRequest) {
       });
     } catch (authError: any) {
       console.error('Error creating auth user:', authError);
-      return NextResponse.json({ error: authError.message }, { status: 400 });
+      return errorResponse(authError.message, authError.code || 'auth-create-failed', 400);
     }
 
     try {
-      await adminDb.collection('users').doc(userRecord.uid).set({
+      const batch = adminDb.batch();
+      const userRef = adminDb.collection('users').doc(userRecord.uid);
+
+      batch.set(userRef, {
         uid: userRecord.uid,
         email,
         displayName,
         role,
-        phoneNumber: phoneNumber || '',
-        experienceYears: experienceYears ? parseInt(experienceYears, 10) : 0,
+        phoneNumber,
+        experienceYears,
         status: 'active',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         totalConsultations: 0,
@@ -50,17 +81,25 @@ export async function POST(req: NextRequest) {
       });
 
       if (role === 'consultant') {
-        await adminDb.collection('consultantProfiles').doc(userRecord.uid).set({
+        const consultantProfileRef = adminDb.collection('consultantProfiles').doc(userRecord.uid);
+        const specialtiesList = specialties
+          ? specialties.split(',').map((specialty: string) => specialty.trim()).filter(Boolean)
+          : [];
+
+        batch.set(consultantProfileRef, {
           uid: userRecord.uid,
           name: displayName,
-          specialties: specialties ? specialties.split(',').map((s: string) => s.trim()) : [],
-          bio: bio || '',
-          experienceYears: experienceYears ? parseInt(experienceYears, 10) : 0,
-          rating: 5,
+          specialties: specialtiesList,
+          bio,
+          experienceYears,
+          rating: 0,
           completedConsultations: 0,
-          professionalSummary: bio || '',
+          professionalSummary: bio,
+          status: 'active',
         });
       }
+
+      await batch.commit();
     } catch (firestoreError: any) {
       console.error('Error creating Firestore profile, rolling back Auth user:', firestoreError);
       try {
@@ -68,12 +107,12 @@ export async function POST(req: NextRequest) {
       } catch (rollbackError) {
         console.error('CRITICAL: Failed to rollback Auth user after Firestore error:', rollbackError);
       }
-      return NextResponse.json({ error: 'Failed to create user profile. User creation rolled back.' }, { status: 500 });
+      return errorResponse('Failed to create user profile. User creation rolled back.', 'profile-create-failed', 500);
     }
 
-    return NextResponse.json({ uid: userRecord.uid }, { status: 201 });
+    return NextResponse.json({ uid: userRecord.uid, role }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating staff:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return errorResponse(error.message || 'Unexpected server error', 'server-error', 500);
   }
 }

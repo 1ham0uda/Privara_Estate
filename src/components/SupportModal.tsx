@@ -6,6 +6,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { supportService } from '@/src/lib/db';
 import { toast } from 'react-hot-toast';
 import { X, Send, MessageSquare } from 'lucide-react';
+import { UserRole } from '@/src/types';
 
 interface SupportModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface SupportModalProps {
   userId: string;
   userName: string;
   userEmail: string;
-  userRole: string;
+  userRole: UserRole;
 }
 
 export default function SupportModal({ isOpen, onClose, userId, userName, userEmail, userRole }: SupportModalProps) {
@@ -33,7 +34,7 @@ export default function SupportModal({ isOpen, onClose, userId, userName, userEm
         userId,
         userName,
         userEmail,
-        userRole as any,
+        userRole,
         message
       );
       toast.success(t('support.message_sent'));

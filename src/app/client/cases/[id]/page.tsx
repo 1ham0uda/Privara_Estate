@@ -376,6 +376,17 @@ export default function CaseDetails() {
                 <Card className="p-8 text-center bg-gray-50 border-dashed border-2 border-gray-200" hover={false}>
                   <Clock className="w-10 h-10 text-gray-300 mx-auto mb-4" />
                   <p className="text-sm text-gray-500">Assignment in progress...</p>
+                  {consultation.intake.selectedConsultantName ? (
+                    <div className="mt-4 rounded-xl bg-white border border-gray-100 p-4 text-left">
+                      <p className="text-xs text-gray-400 uppercase font-bold mb-1">{t('intake.requested_consultant_label')}</p>
+                      <p className="font-bold text-gray-900">{consultation.intake.selectedConsultantName}</p>
+                      {consultation.intake.selectedConsultantUid ? (
+                        <Link href={`/consultants/${consultation.intake.selectedConsultantUid}`} className="inline-flex mt-3 text-sm text-blue-600 hover:text-blue-700 underline underline-offset-2">
+                          {t('intake.view_consultant_profile')}
+                        </Link>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </Card>
               )}
             </section>

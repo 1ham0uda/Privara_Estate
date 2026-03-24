@@ -9,7 +9,20 @@ import Navbar from '@/src/components/Navbar';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-hot-toast';
+import { toast, Toaster } from 'react-hot-toast';
+
+function getForgotPasswordErrorMessage(error: any, t: (key: string) => string) {
+  switch (error?.code) {
+    case 'auth/invalid-email':
+      return t('auth.forgotPassword.error.invalid_email');
+    case 'auth/too-many-requests':
+      return t('auth.forgotPassword.error.too_many_requests');
+    case 'auth/user-not-found':
+      return t('auth.forgotPassword.success');
+    default:
+      return error?.message || t('auth.forgotPassword.error.generic');
+  }
+}
 
 export default function ForgotPasswordPage() {
   const { t, isRTL } = useLanguage();
@@ -20,12 +33,19 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       toast.success(t('auth.forgotPassword.success'));
       router.push('/login');
     } catch (err: any) {
-      toast.error(err.message || t('common.error'));
+      const message = getForgotPasswordErrorMessage(err, t);
+      if (err?.code === 'auth/user-not-found') {
+        toast.success(message);
+        router.push('/login');
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -33,6 +53,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+      <Toaster position="top-center" />
       <Navbar />
       <main className="max-w-md mx-auto px-4 py-12">
         <div className="flex items-center gap-4 mb-8">
@@ -41,18 +62,23 @@ export default function ForgotPasswordPage() {
               <ChevronLeft className="w-5 h-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">{t('auth.forgotPassword.title')}</h1>
+          <div>
+            <h1 className="text-2xl font-bold">{t('auth.forgotPassword.title')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('auth.forgotPassword.subtitle')}</p>
+          </div>
         </div>
 
         <Card className="p-6 bg-white shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.email')}</label>
-              <Input 
-                type="email" 
-                value={email} 
-                onChange={(e: any) => setEmail(e.target.value)} 
-                required 
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e: any) => setEmail(e.target.value)}
+                required
+                placeholder={t('auth.forgotPassword.email_placeholder')}
+                dir="ltr"
               />
             </div>
             <Button variant="primary" type="submit" className="w-full" loading={loading}>
