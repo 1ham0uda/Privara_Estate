@@ -1,13 +1,13 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  addDoc, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  addDoc,
+  query,
+  where,
+  orderBy,
   onSnapshot,
   serverTimestamp,
   getDocs,
@@ -327,7 +327,13 @@ export const consultationService = {
         q = query(collection(db, 'changeRequests'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
       }
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChangeRequest));
+      return snapshot.docs.map((doc) => {
+        const data = doc.data() as Omit<ChangeRequest, 'id'>;
+        return {
+          id: doc.id,
+          ...data,
+        };
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -365,12 +371,12 @@ export const consultationService = {
       const storageRef = ref(storage, `reports/${id}/${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
-      
-      await this.updateConsultation(id, { 
+
+      await this.updateConsultation(id, {
         reportUrl: downloadURL,
         status: 'report_sent'
       });
-      
+
       return downloadURL;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -384,11 +390,11 @@ export const consultationService = {
       const storageRef = ref(storage, `meetings/${id}/${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
-      
-      await this.updateConsultation(id, { 
+
+      await this.updateConsultation(id, {
         meetingRecordingUrl: downloadURL,
       });
-      
+
       return downloadURL;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -447,15 +453,15 @@ export const consultationService = {
 
 export const chatService = {
   async sendMessage(
-    caseId: string, 
-    senderId: string, 
-    senderName: string, 
-    senderRole: string, 
-    text: string, 
-    clientId: string, 
-    consultantId?: string, 
-    imageUrl?: string, 
-    audioUrl?: string, 
+    caseId: string,
+    senderId: string,
+    senderName: string,
+    senderRole: string,
+    text: string,
+    clientId: string,
+    consultantId?: string,
+    imageUrl?: string,
+    audioUrl?: string,
     type: Message['type'] = 'text'
   ): Promise<void> {
     const path = 'messages';
