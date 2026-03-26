@@ -35,10 +35,47 @@ import Image from 'next/image';
 import { useLanguage } from '@/src/context/LanguageContext';
 
 const CALL_TIMEOUT_MS = 45_000;
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+];
+
+const parseIceServersFromEnv = (): RTCIceServer[] => {
+  const fromJson = process.env.NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON;
+  if (fromJson) {
+    try {
+      const parsed = JSON.parse(fromJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as RTCIceServer[];
+      }
+    } catch (error) {
+      console.error('[call] Invalid NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON', error);
+    }
+  }
+
+  const turnUrls = (process.env.NEXT_PUBLIC_WEBRTC_TURN_URLS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const turnUsername = process.env.NEXT_PUBLIC_WEBRTC_TURN_USERNAME;
+  const turnCredential = process.env.NEXT_PUBLIC_WEBRTC_TURN_CREDENTIAL;
+
+  if (turnUrls.length > 0 && turnUsername && turnCredential) {
+    return [
+      ...DEFAULT_ICE_SERVERS,
+      {
+        urls: turnUrls,
+        username: turnUsername,
+        credential: turnCredential,
+      },
+    ];
+  }
+
+  return DEFAULT_ICE_SERVERS;
+};
+
 const RTC_CONFIGURATION: RTCConfiguration = {
-  iceServers: [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-  ],
+  iceServers: parseIceServersFromEnv(),
+  iceCandidatePoolSize: 10,
 };
 
 const TERMINAL_CALL_STATUSES = new Set(['declined', 'ended', 'missed']);
@@ -451,20 +488,43 @@ export default function ChatPage() {
     pendingCandidatesRef.current = [];
   };
 
-  const attachRemoteStream = (event: RTCTrackEvent) => {
-    if (!remoteStreamRef.current) {
-      remoteStreamRef.current = new MediaStream();
+  const attachRemoteStream = async (event: RTCTrackEvent) => {
+    const incomingStream = event.streams?.[0] || null;
+
+    if (incomingStream) {
+      remoteStreamRef.current = incomingStream;
+    } else {
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      if (!remoteStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
+        remoteStreamRef.current.addTrack(event.track);
+      }
     }
 
-    event.streams[0]?.getTracks().forEach(track => {
-      if (!remoteStreamRef.current?.getTracks().some(existing => existing.id === track.id)) {
-        remoteStreamRef.current?.addTrack(track);
-      }
-    });
+    const remoteAudioEl = remoteAudioRef.current;
+    if (remoteAudioEl && remoteStreamRef.current) {
+      remoteAudioEl.autoplay = true;
+      remoteAudioEl.muted = false;
+      remoteAudioEl.volume = 1;
+      remoteAudioEl.srcObject = remoteStreamRef.current;
 
-    if (remoteAudioRef.current && remoteStreamRef.current) {
-      remoteAudioRef.current.srcObject = remoteStreamRef.current;
-      remoteAudioRef.current.play().catch(() => undefined);
+      const playRemoteAudio = async () => {
+        try {
+          await remoteAudioEl.play();
+        } catch (error) {
+          console.error('[call] Remote audio playback failed', error);
+          toast.error(t('call.playback_failed'));
+        }
+      };
+
+      if (remoteAudioEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await playRemoteAudio();
+      } else {
+        remoteAudioEl.onloadedmetadata = () => {
+          void playRemoteAudio();
+        };
+      }
     }
 
     maybeStartCallRecording();
@@ -474,10 +534,13 @@ export default function ChatPage() {
     const peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
     peerConnectionRef.current = peerConnection;
 
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    localStream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+      peerConnection.addTrack(track, localStream);
+    });
 
     peerConnection.ontrack = (event) => {
-      attachRemoteStream(event);
+      void attachRemoteStream(event);
     };
 
     peerConnection.onicecandidate = (event) => {
@@ -486,10 +549,22 @@ export default function ChatPage() {
       }
     };
 
+    peerConnection.onicecandidateerror = (event) => {
+      console.error('[call] ICE candidate error', event);
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('[call] ICE state', peerConnection.iceConnectionState);
+      if (peerConnection.iceConnectionState === 'failed') {
+        toast.error(t('call.connection_failed'));
+      }
+    };
+
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
-      if (state === 'failed' || state === 'disconnected') {
-        toast.error(t('call.ended_remote'));
+      console.log('[call] Peer connection state', state);
+      if (state === 'failed') {
+        toast.error(t('call.connection_failed'));
       }
     };
 
@@ -499,10 +574,19 @@ export default function ChatPage() {
 
   const prepareLocalStream = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       localStreamRef.current = stream;
       if (localAudioRef.current) {
         localAudioRef.current.srcObject = stream;
+        localAudioRef.current.muted = true;
+        localAudioRef.current.volume = 0;
+        localAudioRef.current.play().catch(() => undefined);
       }
       return stream;
     } catch {

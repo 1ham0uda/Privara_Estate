@@ -28,3 +28,14 @@ Additional fixes in this handoff:
 - Removed useSearchParams from shared support workspace and passed initial ticket IDs through props.
 - Wrapped consultant loading in useCallback to satisfy the current exhaustive-deps warning source.
 - Removed temporary junk files (abc.txt, testwrite) and tsbuildinfo from the delivered project.
+
+## Audio call fix notes
+- Hardened the in-app audio call media path in `src/app/cases/[id]/chat/page.tsx`.
+- Remote audio attachment now supports browsers that deliver `RTCTrackEvent.track` without a populated `event.streams[0]`.
+- Remote audio playback is now retried after `loadedmetadata` and no longer fails silently.
+- Added WebRTC ICE server configuration via env vars for TURN support on real networks:
+  - `NEXT_PUBLIC_WEBRTC_TURN_URLS`
+  - `NEXT_PUBLIC_WEBRTC_TURN_USERNAME`
+  - `NEXT_PUBLIC_WEBRTC_TURN_CREDENTIAL`
+  - or `NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON`
+- Added clearer call connection/playback error messages in English and Arabic.
