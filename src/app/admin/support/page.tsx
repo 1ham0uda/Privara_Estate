@@ -1,23 +1,19 @@
-'use client';
+import { Suspense } from 'react';
+import AdminSupportPageClient from './AdminSupportPageClient';
 
-import React from 'react';
-import Navbar from '@/src/components/Navbar';
-import { useLanguage } from '@/src/context/LanguageContext';
-import AdminSupportWorkspace from '@/src/components/support/AdminSupportWorkspace';
+type AdminSupportPageProps = {
+  searchParams?: {
+    ticketId?: string;
+    messageId?: string;
+  };
+};
 
-export default function AdminSupportPage() {
-  const { t, isRTL } = useLanguage();
+export default function AdminSupportPage({ searchParams }: AdminSupportPageProps) {
+  const initialTicketId = searchParams?.ticketId || searchParams?.messageId || null;
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">{t('admin.dashboard.tab.support')}</h1>
-          <p className="text-gray-500 mt-2">{t('support.admin_page_description')}</p>
-        </div>
-        <AdminSupportWorkspace />
-      </main>
-    </div>
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+      <AdminSupportPageClient initialTicketId={initialTicketId} />
+    </Suspense>
   );
 }

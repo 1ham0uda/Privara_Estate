@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, MessageSquare, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
@@ -11,11 +10,13 @@ import { formatDate } from '@/src/lib/utils';
 import { Badge, Button, Card } from '@/src/components/UI';
 import { SupportMessage } from '@/src/types';
 
-export default function AdminSupportWorkspace() {
+type AdminSupportWorkspaceProps = {
+  initialTicketId?: string | null;
+};
+
+export default function AdminSupportWorkspace({ initialTicketId = null }: AdminSupportWorkspaceProps) {
   const { profile, loading: authLoading } = useRoleGuard(['admin']);
   const { t, isRTL, language } = useLanguage();
-  const searchParams = useSearchParams();
-  const ticketIdFromUrl = searchParams.get('ticketId') || searchParams.get('messageId');
   const [tickets, setTickets] = useState<SupportMessage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,8 +43,8 @@ export default function AdminSupportWorkspace() {
   }, [t]);
 
   useEffect(() => {
-    if (ticketIdFromUrl && tickets.some((ticket) => ticket.id === ticketIdFromUrl)) {
-      setSelectedId(ticketIdFromUrl);
+    if (initialTicketId && tickets.some((ticket) => ticket.id === initialTicketId)) {
+      setSelectedId(initialTicketId);
       return;
     }
 
@@ -54,7 +55,7 @@ export default function AdminSupportWorkspace() {
     if (selectedId && !tickets.some((ticket) => ticket.id === selectedId)) {
       setSelectedId(tickets[0]?.id || null);
     }
-  }, [ticketIdFromUrl, tickets, selectedId]);
+  }, [initialTicketId, tickets, selectedId]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedId) || null,
@@ -67,10 +68,16 @@ export default function AdminSupportWorkspace() {
 
     setReplying(true);
     try {
-      await supportService.replyToSupportMessage(selectedTicket.id, profile.uid, profile.displayName, 'admin', replyText);
+      await supportService.replyToSupportMessage(
+        selectedTicket.id,
+        profile.uid,
+        profile.displayName,
+        'admin',
+        replyText
+      );
       setReplyText('');
       toast.success(t('support.reply_sent'));
-    } catch (error) {
+    } catch {
       toast.error(t('support.reply_error'));
     } finally {
       setReplying(false);
@@ -84,7 +91,7 @@ export default function AdminSupportWorkspace() {
     try {
       await supportService.closeSupportMessage(selectedTicket.id, profile.uid, profile.displayName);
       toast.success(t('support.ticket_closed'));
-    } catch (error) {
+    } catch {
       toast.error(t('support.close_error'));
     } finally {
       setClosing(false);
@@ -118,15 +125,21 @@ export default function AdminSupportWorkspace() {
                 key={ticket.id}
                 type="button"
                 onClick={() => setSelectedId(ticket.id)}
-                className={`w-full p-4 border-b border-gray-50 text-left transition-colors hover:bg-gray-50 ${selectedId === ticket.id ? 'bg-blue-50' : ''} ${isRTL ? 'text-right' : ''}`}
+                className={`w-full p-4 border-b border-gray-50 text-left transition-colors hover:bg-gray-50 ${
+                  selectedId === ticket.id ? 'bg-blue-50' : ''
+                } ${isRTL ? 'text-right' : ''}`}
               >
                 <div className={`flex items-center justify-between gap-2 mb-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <span className="text-sm font-semibold text-gray-900">{ticket.userName}</span>
-                  <Badge variant={ticket.status === 'open' ? 'warning' : 'success'}>{t(`support.${ticket.status}`)}</Badge>
+                  <Badge variant={ticket.status === 'open' ? 'warning' : 'success'}>
+                    {t(`support.${ticket.status}`)}
+                  </Badge>
                 </div>
                 <p className="text-xs text-gray-500 mb-1">{ticket.userEmail}</p>
                 <p className="text-sm text-gray-700 line-clamp-2">{ticket.text}</p>
-                <p className="text-[11px] text-gray-400 mt-2">{formatDate(ticket.updatedAt || ticket.createdAt, language)}</p>
+                <p className="text-[11px] text-gray-400 mt-2">
+                  {formatDate(ticket.updatedAt || ticket.createdAt, language)}
+                </p>
               </button>
             ))}
           </div>
@@ -147,12 +160,21 @@ export default function AdminSupportWorkspace() {
               <div>
                 <div className={`flex items-center gap-2 mb-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <h2 className="font-bold text-gray-900">{selectedTicket.userName}</h2>
-                  <Badge variant={selectedTicket.status === 'open' ? 'warning' : 'success'}>{t(`support.${selectedTicket.status}`)}</Badge>
+                  <Badge variant={selectedTicket.status === 'open' ? 'warning' : 'success'}>
+                    {t(`support.${selectedTicket.status}`)}
+                  </Badge>
                 </div>
-                <p className="text-sm text-gray-500">{selectedTicket.userEmail} • {t(`auth.demo_${selectedTicket.userRole}`)}</p>
+                <p className="text-sm text-gray-500">
+                  {selectedTicket.userEmail} • {t(`auth.demo_${selectedTicket.userRole}`)}
+                </p>
               </div>
               {selectedTicket.status === 'open' ? (
-                <Button variant="outline" className="text-rose-600 border-rose-200 hover:bg-rose-50" loading={closing} onClick={handleClose}>
+                <Button
+                  variant="outline"
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                  loading={closing}
+                  onClick={handleClose}
+                >
                   {t('support.close_ticket')}
                 </Button>
               ) : null}
@@ -174,15 +196,30 @@ export default function AdminSupportWorkspace() {
               {selectedTicket.replies?.map((reply, index) => {
                 const isAdminReply = reply.senderRole === 'admin';
                 return (
-                  <div key={`${selectedTicket.id}-reply-${index}`} className={`flex flex-col ${isAdminReply ? (isRTL ? 'items-start' : 'items-end') : (isRTL ? 'items-end' : 'items-start')}`}>
-                    <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${isAdminReply ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-800'}`}>
-                      <div className={`flex items-center gap-2 mb-2 text-xs ${isAdminReply ? 'text-gray-300' : 'text-gray-500'} ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <span className={`font-semibold ${isAdminReply ? 'text-white' : 'text-gray-900'}`}>{reply.senderName}</span>
+                  <div
+                    key={`${selectedTicket.id}-reply-${index}`}
+                    className={`flex flex-col ${
+                      isAdminReply ? (isRTL ? 'items-start' : 'items-end') : (isRTL ? 'items-end' : 'items-start')
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${
+                        isAdminReply ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-800'
+                      }`}
+                    >
+                      <div
+                        className={`flex items-center gap-2 mb-2 text-xs ${
+                          isAdminReply ? 'text-gray-300' : 'text-gray-500'
+                        } ${isRTL ? 'flex-row-reverse' : ''}`}
+                      >
+                        <span className={`font-semibold ${isAdminReply ? 'text-white' : 'text-gray-900'}`}>
+                          {reply.senderName}
+                        </span>
                         <span>•</span>
                         <span>{reply.senderRole === 'admin' ? t('support.support_team') : t(`auth.demo_${reply.senderRole}`)}</span>
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{reply.text}</p>
-                      <p className={`text-[11px] mt-2 ${isAdminReply ? 'text-gray-400' : 'text-gray-400'}`}>{formatDate(reply.createdAt, language)}</p>
+                      <p className="text-[11px] mt-2 text-gray-400">{formatDate(reply.createdAt, language)}</p>
                     </div>
                   </div>
                 );
@@ -196,7 +233,9 @@ export default function AdminSupportWorkspace() {
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     placeholder={t('support.type_reply')}
-                    className={`w-full h-24 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm resize-none ${isRTL ? 'text-right' : ''}`}
+                    className={`w-full h-24 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm resize-none ${
+                      isRTL ? 'text-right' : ''
+                    }`}
                   />
                   <div className={`flex justify-end ${isRTL ? 'justify-start' : ''}`}>
                     <Button type="submit" loading={replying} disabled={!replyText.trim()}>
