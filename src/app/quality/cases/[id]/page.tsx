@@ -4,7 +4,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { consultationService, chatService, qualityService } from '@/src/lib/db';
-import { ConsultationCase, Message, QualityAuditReport } from '@/src/types';
+import { callService } from '@/src/lib/callService';
+import { CallSession, ConsultationCase, Message, QualityAuditReport } from '@/src/types';
 import { Card, Badge, Button } from '@/src/components/UI';
 import { 
   ChevronLeft, 
@@ -35,6 +36,7 @@ export default function QualityCaseReview() {
   const [consultation, setConsultation] = useState<ConsultationCase | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [reports, setReports] = useState<QualityAuditReport[]>([]);
+  const [recordedCalls, setRecordedCalls] = useState<CallSession[]>([]);
   const [activeTab, setActiveTab] = useState<'chat' | 'recordings' | 'audit'>('chat');
   
   const [auditForm, setAuditForm] = useState({
@@ -62,10 +64,15 @@ export default function QualityCaseReview() {
         setReports(r);
       };
       fetchReports();
+
+      const unsubCalls = callService.subscribeToCallHistory(id, (calls) => {
+        setRecordedCalls(calls.filter((call) => Boolean(call.recordingUrl)));
+      });
       
       return () => {
         unsubConsultation();
         unsubMessages();
+        unsubCalls();
       };
     }
   }, [profile, id]);

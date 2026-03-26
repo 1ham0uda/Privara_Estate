@@ -253,6 +253,58 @@ service cloud.firestore {
         data.replies is list;
     }
 
+
+    function isValidCall(data) {
+      return hasRequiredFields(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'status', 'createdAt', 'updatedAt', 'recordingStatus']) &&
+        hasOnlyAllowedFields(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'status', 'createdAt', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer']) &&
+        data.consultationId is string &&
+        data.clientId is string &&
+        data.consultantId is string &&
+        data.initiatedBy is string &&
+        data.initiatedByName is string && data.initiatedByName.size() > 0 && data.initiatedByName.size() < 100 &&
+        data.initiatedByRole in ['client', 'consultant'] &&
+        data.type in ['audio'] &&
+        data.status in ['ringing', 'active', 'declined', 'ended', 'missed'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        (!('acceptedAt' in data) || data.acceptedAt == null || data.acceptedAt is timestamp) &&
+        (!('endedAt' in data) || data.endedAt == null || data.endedAt is timestamp) &&
+        (!('endedBy' in data) || data.endedBy == null || data.endedBy is string) &&
+        (!('callerJoinedAt' in data) || data.callerJoinedAt == null || data.callerJoinedAt is timestamp) &&
+        (!('calleeJoinedAt' in data) || data.calleeJoinedAt == null || data.calleeJoinedAt is timestamp) &&
+        (!('durationSec' in data) || data.durationSec == null || (data.durationSec is number && data.durationSec >= 0)) &&
+        data.recordingStatus in ['not_started', 'recording', 'processing', 'ready', 'failed'] &&
+        (!('recordingUrl' in data) || data.recordingUrl == null || data.recordingUrl == '' || isValidUrl(data.recordingUrl)) &&
+        (!('offer' in data) || data.offer == null || data.offer is map) &&
+        (!('answer' in data) || data.answer == null || data.answer is map);
+    }
+
+    function isValidCallCandidate(data) {
+      return hasRequiredFields(['senderId', 'candidate', 'createdAt']) &&
+        hasOnlyAllowedFields(['senderId', 'candidate', 'sdpMid', 'sdpMLineIndex', 'createdAt']) &&
+        data.senderId == request.auth.uid &&
+        data.candidate is string && data.candidate.size() > 0 && data.candidate.size() < 5000 &&
+        (!('sdpMid' in data) || data.sdpMid == null || data.sdpMid is string) &&
+        (!('sdpMLineIndex' in data) || data.sdpMLineIndex == null || data.sdpMLineIndex is number) &&
+        data.createdAt is timestamp;
+    }
+
+    function canCreateCall() {
+      return isValidCall(request.resource.data) &&
+        exists(/databases/$(database)/documents/consultations/$(request.resource.data.consultationId)) &&
+        request.auth.uid == request.resource.data.initiatedBy &&
+        request.resource.data.clientId == consultationDoc(request.resource.data.consultationId).clientId &&
+        request.resource.data.consultantId == consultationDoc(request.resource.data.consultationId).consultantId &&
+        (request.auth.uid == request.resource.data.clientId || request.auth.uid == request.resource.data.consultantId);
+    }
+
+    function canUpdateCall() {
+      return isValidCall(request.resource.data) &&
+        areImmutableFieldsUnchanged(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'createdAt']) &&
+        (isAdmin() || ((request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer']))) ;
+    }
+
     function currentUserRole() {
       return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
@@ -267,6 +319,28 @@ service cloud.firestore {
 
     function consultationDoc(caseId) {
       return get(/databases/$(database)/documents/consultations/$(caseId)).data;
+    }
+
+
+    function callDoc(callId) {
+      return get(/databases/$(database)/documents/calls/$(callId)).data;
+    }
+
+    function isConsultationParticipant(caseId) {
+      return exists(/databases/$(database)/documents/consultations/$(caseId)) && (
+        consultationDoc(caseId).clientId == request.auth.uid ||
+        consultationDoc(caseId).consultantId == request.auth.uid ||
+        consultationDoc(caseId).qualitySpecialistId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    function isCallParticipant(callId) {
+      return exists(/databases/$(database)/documents/calls/$(callId)) && (
+        callDoc(callId).clientId == request.auth.uid ||
+        callDoc(callId).consultantId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     function clientCanUpdateConsultation() {
@@ -444,6 +518,22 @@ service cloud.firestore {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() && isValidSupportMessage(request.resource.data);
       allow update: if isValidSupportMessage(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'userEmail', 'userRole', 'createdAt']) && ((isAdmin()) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId && request.resource.data.text == resource.data.text && request.resource.data.status == resource.data.status && request.resource.data.userName == resource.data.userName));
+    }
+
+    match /calls/{callId} {
+      allow read: if isAuthenticated() && (isConsultationParticipant(resource.data.consultationId) || isAdmin());
+      allow create: if isAuthenticated() && canCreateCall();
+      allow update: if isAuthenticated() && canUpdateCall();
+
+      match /callerCandidates/{candidateId} {
+        allow read: if isAuthenticated() && isCallParticipant(callId);
+        allow create: if isAuthenticated() && isCallParticipant(callId) && isValidCallCandidate(request.resource.data);
+      }
+
+      match /calleeCandidates/{candidateId} {
+        allow read: if isAuthenticated() && isCallParticipant(callId);
+        allow create: if isAuthenticated() && isCallParticipant(callId) && isValidCallCandidate(request.resource.data);
+      }
     }
 
     match /settings/{settingId} {

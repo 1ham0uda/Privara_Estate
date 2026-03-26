@@ -114,6 +114,51 @@ export interface ConsultationCase {
   feedback?: string;
 }
 
+
+export type CallType = 'audio';
+
+export type CallStatus = 'ringing' | 'active' | 'declined' | 'ended' | 'missed';
+
+export type CallRecordingStatus = 'not_started' | 'recording' | 'processing' | 'ready' | 'failed';
+
+export interface CallSignalDescription {
+  type: 'offer' | 'answer';
+  sdp: string;
+}
+
+export interface CallSession {
+  id: string;
+  consultationId: string;
+  clientId: string;
+  consultantId: string;
+  initiatedBy: string;
+  initiatedByName: string;
+  initiatedByRole: Extract<UserRole, 'client' | 'consultant'>;
+  type: CallType;
+  status: CallStatus;
+  createdAt: any;
+  updatedAt: any;
+  acceptedAt?: any;
+  endedAt?: any;
+  endedBy?: string | null;
+  callerJoinedAt?: any;
+  calleeJoinedAt?: any;
+  durationSec?: number | null;
+  recordingStatus: CallRecordingStatus;
+  recordingUrl?: string | null;
+  offer?: CallSignalDescription | null;
+  answer?: CallSignalDescription | null;
+}
+
+export interface CallIceCandidate {
+  id: string;
+  senderId: string;
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+  createdAt: any;
+}
+
 export interface Message {
   id: string;
   caseId: string;
