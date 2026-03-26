@@ -4,11 +4,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 type Language = 'en' | 'ar';
 
+type TranslationVars = Record<string, string | number | null | undefined>;
+
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
-  tForLanguage: (key: string, lang: Language) => string;
+  t: (key: string, vars?: TranslationVars) => string;
+  tForLanguage: (key: string, lang: Language, vars?: TranslationVars) => string;
   isRTL: boolean;
 }
 
@@ -492,24 +494,24 @@ const translations: Record<Language, Record<string, string>> = {
     'intake.consultant_required': 'Select a consultant before continuing to payment.',
     'payment.missing_consultant': 'Your consultation request is missing the selected consultant. Please choose one again.',
     'payment.load_error': 'There was an issue loading your consultation details. Please start over.',
-    'payment.selected_consultant_helper': 'This consultant will be stored on your consultation request when payment is completed.',
+    'payment.selected_consultant_helper': 'This consultant will be stored on your consultation request when you submit it.',
     'payment.assignment_title': 'Assignment',
     'payment.assign_later_title': 'Let the team assign later',
     'payment.assign_later_desc': 'This request will stay unassigned until an admin or team member assigns the right consultant.',
-    'payment.error_failed': 'Payment failed. Please try again.',
-    'payment.confirm_and_pay': 'Confirm and Pay {amount} EGP',
-    'payment.title': 'Consultation Summary',
+    'payment.error_failed': 'Failed to submit your consultation request. Please try again.',
+    'payment.confirm_and_pay': 'Submit Request',
+    'payment.title': 'Consultation Request Review',
     'payment.service': 'Service',
     'payment.service_name': 'Full Real Estate Consultation',
     'payment.total_amount': 'Total Amount',
-    'payment.one_time': 'One-time payment',
-    'payment.secure_msg': 'Your payment is secure. We use industry-standard encryption to protect your data.',
-    'payment.success_title': 'Payment Successful!',
-    'payment.success_desc': 'Your consultation case has been created. Redirecting you to your dashboard...',
-    'payment.details_title': 'Payment Details',
-    'payment.simulated_title': 'Simulated Payment',
-    'payment.simulated_desc': 'This is a placeholder for a real payment gateway (Stripe, Paymob, etc.). Click the button below to simulate a successful transaction.',
-    'payment.secure_ssl': 'Secure SSL Encryption',
+    'payment.one_time': 'Payment pending admin confirmation',
+    'payment.secure_msg': 'Your consultation details are securely stored. Payment will remain pending until an administrator confirms it offline.',
+    'payment.success_title': 'Request Submitted',
+    'payment.success_desc': 'Your consultation case has been created with payment pending. Redirecting you now...',
+    'payment.details_title': 'Request Submission',
+    'payment.simulated_title': 'Online payment unavailable',
+    'payment.simulated_desc': 'Online payment is not configured in this deployment. You can still submit your consultation request now, and its payment status will remain pending until an administrator confirms it.',
+    'payment.secure_ssl': 'Secure request submission',
     'payment.confirm_pay': 'Confirm & Pay 3,000 EGP',
     'payment.back_to_intake': 'Back to Intake',
     'profile.title': 'Profile Settings',
@@ -532,6 +534,52 @@ const translations: Record<Language, Record<string, string>> = {
     'notifications.view_details': 'View details',
     'notifications.mark_as_read': 'Mark as read',
     'notifications.view_all': 'View all',
+
+    'notifications.consultation_created.title': 'New consultation request',
+    'notifications.consultation_created.message_with_consultant': '{clientName} submitted a consultation request and selected {consultantName}.',
+    'notifications.consultation_created.message_without_consultant': '{clientName} submitted a consultation request without selecting a consultant.',
+    'notifications.consultation_assigned.title': 'Consultation assigned',
+    'notifications.consultation_assigned.message_client': '{consultantName} has been assigned to your consultation.',
+    'notifications.consultation_assigned.message_consultant': '{clientName} has been assigned to you.',
+    'notifications.quality_assigned.title': 'Quality review assigned',
+    'notifications.quality_assigned.message': 'You were assigned to review case {caseNumber}.',
+    'notifications.consultant_change_requested.title': 'Consultant change requested',
+    'notifications.consultant_change_requested.message': 'A client requested a consultant change for case {caseNumber}.',
+    'notifications.consultant_reassigned.title': 'Consultant reassigned',
+    'notifications.consultant_reassigned.message_client': 'Your consultant was changed to {consultantName}.',
+    'notifications.consultant_reassigned.message_new_consultant': 'A consultation was reassigned to you.',
+    'notifications.consultant_reassigned.message_previous_consultant': 'Case {caseNumber} was reassigned to another consultant.',
+    'notifications.audit_report_submitted.title': 'New quality audit report',
+    'notifications.audit_report_submitted.message': 'A new quality report was submitted for case {caseNumber}.',
+    'notifications.support_ticket_created.title': 'New support ticket',
+    'notifications.support_ticket_created.message': '{userName} opened a new support ticket.',
+    'notifications.support_ticket_replied.title': 'Support ticket reply',
+    'notifications.support_ticket_replied.message_user': 'The support team replied to your ticket.',
+    'notifications.support_ticket_replied.message_admin': '{userName} replied to the support ticket.',
+    'notifications.support_ticket_closed.title': 'Support ticket closed',
+    'notifications.support_ticket_closed.message': 'Your support ticket was closed by the support team.',
+    'payment.status.pending': 'Pending',
+    'payment.status.paid': 'Paid',
+    'admin.case_details.mark_payment_paid': 'Mark payment as paid',
+    'admin.case_details.payment_marked_paid': 'Payment marked as paid',
+    'admin.case_details.payment_mark_paid_failed': 'Failed to update payment status',
+    'admin.case_details.payment_pending': 'Payment is still pending admin confirmation',
+    'client.case.title': 'Consultation Details',
+    'client.case.open_chat': 'Open Chat',
+    'client.case.back': 'Back',
+    'client.case.assignment_in_progress': 'Assignment in progress...',
+    'client.case.report_ready': 'Consultation Report',
+    'client.case.download_report': 'Download Report',
+    'client.case.report_pending': 'Your final recommendation report will be available here once the consultation is complete.',
+    'client.case.request_pending': 'Request Pending',
+    'client.case.request_consultant_change': 'Request Consultant Change',
+    'client.case.reassignment_title': 'Request Consultant Change',
+    'client.case.reassignment_desc': 'If this consultant is not the right fit, you can request a change. Please provide a reason for the admin team.',
+    'client.case.reassignment_placeholder': 'Why would you like to change your consultant?',
+    'client.case.send_request': 'Send Request',
+    'client.case.issue_redirected': 'Opening support so you can report the issue.',
+    'consultant.case_details.success_notes': 'Notes saved successfully',
+    'consultant.case_details.error_notes': 'Failed to save notes',
     'quality.dashboard_title': 'Quality Specialist Dashboard',
     'quality.dashboard_subtitle': 'Monitor and audit consultation cases for quality assurance.',
     'quality.search_placeholder': 'Search cases...',
@@ -1260,24 +1308,24 @@ const translations: Record<Language, Record<string, string>> = {
     'intake.consultant_required': 'يجب اختيار مستشار قبل المتابعة إلى الدفع.',
     'payment.missing_consultant': 'طلب الاستشارة لا يحتوي على المستشار المختار. من فضلك اختر مستشارًا مرة أخرى.',
     'payment.load_error': 'حدثت مشكلة أثناء تحميل تفاصيل الاستشارة. من فضلك ابدأ من جديد.',
-    'payment.selected_consultant_helper': 'سيتم حفظ هذا المستشار داخل طلب الاستشارة عند إتمام الدفع.',
+    'payment.selected_consultant_helper': 'سيتم حفظ هذا المستشار داخل طلب الاستشارة عند إرسالها.',
     'payment.assignment_title': 'التعيين',
     'payment.assign_later_title': 'دع الفريق يعيّن لاحقًا',
     'payment.assign_later_desc': 'سيظل هذا الطلب بدون إسناد حتى يقوم المدير أو الفريق بتعيين المستشار المناسب.',
-    'payment.error_failed': 'فشل الدفع. حاول مرة أخرى.',
-    'payment.confirm_and_pay': 'تأكيد ودفع {amount} جنيه',
-    'payment.title': 'ملخص الاستشارة',
+    'payment.error_failed': 'فشل إرسال طلب الاستشارة. حاول مرة أخرى.',
+    'payment.confirm_and_pay': 'إرسال الطلب',
+    'payment.title': 'مراجعة طلب الاستشارة',
     'payment.service': 'الخدمة',
     'payment.service_name': 'استشارة عقارية كاملة',
     'payment.total_amount': 'المبلغ الإجمالي',
-    'payment.one_time': 'دفع لمرة واحدة',
-    'payment.secure_msg': 'دفعك آمن. نحن نستخدم تشفيراً قياسياً لحماية بياناتك.',
-    'payment.success_title': 'تم الدفع بنجاح!',
-    'payment.success_desc': 'تم إنشاء حالة الاستشارة الخاصة بك. جاري توجيهك إلى لوحة التحكم...',
-    'payment.details_title': 'تفاصيل الدفع',
-    'payment.simulated_title': 'دفع تجريبي',
-    'payment.simulated_desc': 'هذا مكان لبوابة دفع حقيقية (Stripe، Paymob، إلخ). انقر فوق الزر أدناه لمحاكاة عملية ناجحة.',
-    'payment.secure_ssl': 'تشفير SSL آمن',
+    'payment.one_time': 'الدفع بانتظار تأكيد الإدارة',
+    'payment.secure_msg': 'يتم حفظ تفاصيل الاستشارة بشكل آمن. ستظل حالة الدفع معلقة حتى تؤكدها الإدارة خارج النظام.',
+    'payment.success_title': 'تم إرسال الطلب',
+    'payment.success_desc': 'تم إنشاء حالة الاستشارة مع بقاء الدفع معلقاً. جاري توجيهك الآن...',
+    'payment.details_title': 'إرسال الطلب',
+    'payment.simulated_title': 'الدفع الإلكتروني غير متاح',
+    'payment.simulated_desc': 'بوابة الدفع الإلكتروني غير مفعلة في هذه النسخة. يمكنك مع ذلك إرسال طلب الاستشارة الآن، وستظل حالة الدفع معلقة حتى تؤكدها الإدارة.',
+    'payment.secure_ssl': 'إرسال طلب آمن',
     'payment.confirm_pay': 'تأكيد ودفع 3,000 جنيه',
     'payment.back_to_intake': 'العودة للبيانات',
     'profile.title': 'إعدادات الملف الشخصي',
@@ -1300,6 +1348,52 @@ const translations: Record<Language, Record<string, string>> = {
     'notifications.view_details': 'عرض التفاصيل',
     'notifications.mark_as_read': 'تحديد كمقروء',
     'notifications.view_all': 'عرض الكل',
+
+    'notifications.consultation_created.title': 'طلب استشارة جديد',
+    'notifications.consultation_created.message_with_consultant': 'قام {clientName} بإرسال طلب استشارة واختيار {consultantName}.',
+    'notifications.consultation_created.message_without_consultant': 'قام {clientName} بإرسال طلب استشارة بدون اختيار مستشار.',
+    'notifications.consultation_assigned.title': 'تم إسناد الاستشارة',
+    'notifications.consultation_assigned.message_client': 'تم إسناد {consultantName} إلى استشارتك.',
+    'notifications.consultation_assigned.message_consultant': 'تم إسناد {clientName} إليك.',
+    'notifications.quality_assigned.title': 'تم إسناد مراجعة الجودة',
+    'notifications.quality_assigned.message': 'تم إسناد مراجعة الحالة {caseNumber} إليك.',
+    'notifications.consultant_change_requested.title': 'تم طلب تغيير المستشار',
+    'notifications.consultant_change_requested.message': 'طلب عميل تغيير المستشار للحالة {caseNumber}.',
+    'notifications.consultant_reassigned.title': 'تم تغيير المستشار',
+    'notifications.consultant_reassigned.message_client': 'تم تغيير مستشارك إلى {consultantName}.',
+    'notifications.consultant_reassigned.message_new_consultant': 'تمت إعادة إسناد استشارة إليك.',
+    'notifications.consultant_reassigned.message_previous_consultant': 'تمت إعادة إسناد الحالة {caseNumber} إلى مستشار آخر.',
+    'notifications.audit_report_submitted.title': 'تقرير جودة جديد',
+    'notifications.audit_report_submitted.message': 'تم إرسال تقرير جودة جديد للحالة {caseNumber}.',
+    'notifications.support_ticket_created.title': 'تذكرة دعم جديدة',
+    'notifications.support_ticket_created.message': 'قام {userName} بفتح تذكرة دعم جديدة.',
+    'notifications.support_ticket_replied.title': 'رد على تذكرة الدعم',
+    'notifications.support_ticket_replied.message_user': 'قام فريق الدعم بالرد على تذكرتك.',
+    'notifications.support_ticket_replied.message_admin': 'قام {userName} بالرد على تذكرة الدعم.',
+    'notifications.support_ticket_closed.title': 'تم إغلاق تذكرة الدعم',
+    'notifications.support_ticket_closed.message': 'تم إغلاق تذكرة الدعم الخاصة بك من فريق الدعم.',
+    'payment.status.pending': 'معلق',
+    'payment.status.paid': 'مدفوع',
+    'admin.case_details.mark_payment_paid': 'تأكيد الدفع كمدفوع',
+    'admin.case_details.payment_marked_paid': 'تم تحديث حالة الدفع إلى مدفوع',
+    'admin.case_details.payment_mark_paid_failed': 'فشل تحديث حالة الدفع',
+    'admin.case_details.payment_pending': 'الدفع ما زال بانتظار تأكيد الإدارة',
+    'client.case.title': 'تفاصيل الاستشارة',
+    'client.case.open_chat': 'فتح المحادثة',
+    'client.case.back': 'رجوع',
+    'client.case.assignment_in_progress': 'جارٍ تعيين المستشار...',
+    'client.case.report_ready': 'تقرير الاستشارة',
+    'client.case.download_report': 'تنزيل التقرير',
+    'client.case.report_pending': 'سيظهر تقرير التوصية النهائي هنا بمجرد اكتمال الاستشارة.',
+    'client.case.request_pending': 'الطلب قيد المراجعة',
+    'client.case.request_consultant_change': 'طلب تغيير المستشار',
+    'client.case.reassignment_title': 'طلب تغيير المستشار',
+    'client.case.reassignment_desc': 'إذا شعرت أن هذا المستشار غير مناسب، يمكنك طلب تغييره. اكتب سبباً واضحاً لفريق الإدارة.',
+    'client.case.reassignment_placeholder': 'لماذا تريد تغيير المستشار؟',
+    'client.case.send_request': 'إرسال الطلب',
+    'client.case.issue_redirected': 'سيتم فتح صفحة الدعم للإبلاغ عن المشكلة.',
+    'consultant.case_details.success_notes': 'تم حفظ الملاحظات بنجاح',
+    'consultant.case_details.error_notes': 'فشل حفظ الملاحظات',
     'quality.dashboard_title': 'لوحة تحكم أخصائي الجودة',
     'quality.dashboard_subtitle': 'مراقبة وتدقيق حالات الاستشارة لضمان الجودة.',
     'quality.search_placeholder': 'البحث في الحالات...',
@@ -1552,12 +1646,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = language;
   }, [language]);
 
-  const t = (key: string) => {
-    return translations[language][key] || key;
+  const interpolate = (template: string, vars?: TranslationVars) => {
+    if (!vars) return template;
+    return template.replace(/\{(.*?)\}/g, (_, token) => {
+      const value = vars[token.trim()];
+      return value === undefined || value === null ? '' : String(value);
+    });
   };
 
-  const tForLanguage = (key: string, lang: Language) => {
-    return translations[lang][key] || key;
+  const t = (key: string, vars?: TranslationVars) => {
+    return interpolate(translations[language][key] || key, vars);
+  };
+
+  const tForLanguage = (key: string, lang: Language, vars?: TranslationVars) => {
+    return interpolate(translations[lang][key] || key, vars);
   };
 
   const isRTL = language === 'ar';

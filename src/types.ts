@@ -109,6 +109,7 @@ export interface ConsultationCase {
   callRecordings?: string[];
   reassignmentRequestStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   tags?: string[];
+  internalNotes?: string;
   rating?: number;
   feedback?: string;
 }
@@ -124,6 +125,35 @@ export interface Message {
   audioUrl?: string;
   type: 'text' | 'image' | 'audio' | 'meeting_request' | 'meeting_link' | 'call_log';
   createdAt: any;
+}
+
+export type NotificationEventType =
+  | 'consultation_created'
+  | 'consultation_assigned'
+  | 'quality_assigned'
+  | 'consultant_change_requested'
+  | 'consultant_reassigned'
+  | 'audit_report_submitted'
+  | 'support_ticket_created'
+  | 'support_ticket_replied'
+  | 'support_ticket_closed';
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  link?: string | null;
+  read: boolean;
+  createdAt: any;
+  actorId?: string;
+  eventType?: NotificationEventType;
+  caseId?: string;
+  ticketId?: string;
+  previousConsultantId?: string | null;
+  titleKey?: string;
+  messageKey?: string;
+  messageParams?: Record<string, string>;
 }
 
 export interface QualityAuditReport {

@@ -135,7 +135,7 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
-        hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt', 'avatarUrl', 'status', 'phoneNumber', 'location', 'specialties', 'rating', 'bio', 'totalConsultations', 'activeConsultations', 'completedConsultations']) &&
+        hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt', 'avatarUrl', 'status', 'phoneNumber', 'location', 'specialties', 'experienceYears', 'rating', 'bio', 'totalConsultations', 'activeConsultations', 'completedConsultations']) &&
         (isAdmin() || (data.uid == request.auth.uid && data.email == request.auth.token.email)) &&
         isValidEmail(data.email) &&
         data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
@@ -145,7 +145,7 @@ service cloud.firestore {
 
     function isValidConsultantProfile(data) {
       return hasRequiredFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary']) &&
-        hasOnlyAllowedFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary', 'avatarUrl']) &&
+        hasOnlyAllowedFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary', 'avatarUrl', 'status']) &&
         data.uid is string &&
         data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
         data.bio is string && data.bio.size() < 2000 &&
@@ -153,12 +153,13 @@ service cloud.firestore {
         data.specialties is list && data.specialties.size() < 20 &&
         data.completedConsultations is number && data.completedConsultations >= 0 &&
         data.rating is number && data.rating >= 0 && data.rating <= 5 &&
-        data.professionalSummary is string && data.professionalSummary.size() < 5000;
+        data.professionalSummary is string && data.professionalSummary.size() < 5000 &&
+        (!('status' in data) || data.status in ['active', 'deactivated']);
     }
 
     function isValidConsultation(data) {
       return hasRequiredFields(['clientId', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt']) &&
-        hasOnlyAllowedFields(['clientId', 'clientName', 'clientAvatarUrl', 'consultantId', 'consultantName', 'qualitySpecialistId', 'qualitySpecialistName', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt', 'completedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'reassignmentRequestStatus', 'tags']) &&
+        hasOnlyAllowedFields(['clientId', 'clientName', 'clientAvatarUrl', 'consultantId', 'consultantName', 'qualitySpecialistId', 'qualitySpecialistName', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt', 'completedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'reassignmentRequestStatus', 'tags', 'rating', 'feedback', 'internalNotes']) &&
         data.clientId is string &&
         (!('clientName' in data) || data.clientName is string) &&
         (!('clientAvatarUrl' in data) || data.clientAvatarUrl == null || data.clientAvatarUrl == "" || isValidUrl(data.clientAvatarUrl)) &&
@@ -168,6 +169,9 @@ service cloud.firestore {
         (!('reassignmentRequestStatus' in data) || data.reassignmentRequestStatus in ['none', 'pending', 'approved', 'rejected']) &&
         (!('reportUrl' in data) || data.reportUrl == null || data.reportUrl == "" || isValidUrl(data.reportUrl)) &&
         (!('meetingRecordingUrl' in data) || data.meetingRecordingUrl == null || data.meetingRecordingUrl == "" || isValidUrl(data.meetingRecordingUrl)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
+        (!('feedback' in data) || data.feedback is string) &&
+        (!('internalNotes' in data) || data.internalNotes is string && data.internalNotes.size() < 5000) &&
         data.intake is map &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -203,11 +207,19 @@ service cloud.firestore {
 
     function isValidNotification(data) {
       return hasRequiredFields(['userId', 'title', 'message', 'read', 'createdAt']) &&
-        hasOnlyAllowedFields(['userId', 'title', 'message', 'link', 'read', 'createdAt']) &&
+        hasOnlyAllowedFields(['userId', 'title', 'message', 'link', 'read', 'createdAt', 'actorId', 'eventType', 'caseId', 'ticketId', 'previousConsultantId', 'titleKey', 'messageKey', 'messageParams']) &&
         data.userId is string &&
         data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
         data.message is string && data.message.size() > 0 && data.message.size() < 1000 &&
         (!('link' in data) || data.link == null || data.link == "" || isValidUrl(data.link)) &&
+        (!('actorId' in data) || data.actorId == request.auth.uid) &&
+        (!('eventType' in data) || data.eventType in ['consultation_created', 'consultation_assigned', 'quality_assigned', 'consultant_change_requested', 'consultant_reassigned', 'audit_report_submitted', 'support_ticket_created', 'support_ticket_replied', 'support_ticket_closed']) &&
+        (!('caseId' in data) || data.caseId == null || data.caseId is string) &&
+        (!('ticketId' in data) || data.ticketId == null || data.ticketId is string) &&
+        (!('previousConsultantId' in data) || data.previousConsultantId == null || data.previousConsultantId is string) &&
+        (!('titleKey' in data) || data.titleKey == null || data.titleKey is string) &&
+        (!('messageKey' in data) || data.messageKey == null || data.messageKey is string) &&
+        (!('messageParams' in data) || data.messageParams == null || data.messageParams is map) &&
         data.read is bool &&
         data.createdAt is timestamp;
     }
@@ -239,6 +251,97 @@ service cloud.firestore {
         (!('closedById' in data) || data.closedById is string) &&
         (!('closedByName' in data) || data.closedByName is string) &&
         data.replies is list;
+    }
+
+    function currentUserRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function isAdminUserId(userId) {
+      return userId is string &&
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.role == 'admin';
+    }
+
+    function consultationDoc(caseId) {
+      return get(/databases/$(database)/documents/consultations/$(caseId)).data;
+    }
+
+    function clientCanUpdateConsultation() {
+      return request.auth.uid == resource.data.clientId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'feedback', 'status', 'updatedAt']) &&
+        resource.data.status == 'report_sent' &&
+        request.resource.data.status == 'completed' &&
+        request.resource.data.clientId == resource.data.clientId &&
+        request.resource.data.consultantId == resource.data.consultantId &&
+        request.resource.data.qualitySpecialistId == resource.data.qualitySpecialistId &&
+        request.resource.data.paymentStatus == resource.data.paymentStatus &&
+        request.resource.data.stage == resource.data.stage;
+    }
+
+    function consultantCanUpdateConsultation() {
+      return request.auth.uid == resource.data.consultantId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'updatedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'tags', 'internalNotes', 'completedAt']) &&
+        request.resource.data.clientId == resource.data.clientId &&
+        request.resource.data.consultantId == resource.data.consultantId &&
+        request.resource.data.qualitySpecialistId == resource.data.qualitySpecialistId &&
+        request.resource.data.paymentStatus == resource.data.paymentStatus;
+    }
+
+    function canCreateNotification() {
+      return isValidNotification(request.resource.data) &&
+        request.resource.data.actorId == request.auth.uid &&
+        (
+          (request.resource.data.eventType == 'consultation_created' &&
+            request.resource.data.caseId is string &&
+            exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+            consultationDoc(request.resource.data.caseId).clientId == request.auth.uid &&
+            (isAdminUserId(request.resource.data.userId) || request.resource.data.userId == consultationDoc(request.resource.data.caseId).consultantId)) ||
+          (request.resource.data.eventType == 'consultation_assigned' &&
+            isAdmin() &&
+            request.resource.data.caseId is string &&
+            exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+            (request.resource.data.userId == consultationDoc(request.resource.data.caseId).clientId || request.resource.data.userId == consultationDoc(request.resource.data.caseId).consultantId)) ||
+          (request.resource.data.eventType == 'quality_assigned' &&
+            isAdmin() &&
+            request.resource.data.caseId is string &&
+            exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+            request.resource.data.userId == consultationDoc(request.resource.data.caseId).qualitySpecialistId) ||
+          (request.resource.data.eventType == 'consultant_change_requested' &&
+            request.resource.data.caseId is string &&
+            exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+            consultationDoc(request.resource.data.caseId).clientId == request.auth.uid &&
+            isAdminUserId(request.resource.data.userId)) ||
+          (request.resource.data.eventType == 'consultant_reassigned' &&
+            isAdmin() &&
+            request.resource.data.caseId is string &&
+            (request.resource.data.userId == consultationDoc(request.resource.data.caseId).clientId ||
+             request.resource.data.userId == consultationDoc(request.resource.data.caseId).consultantId ||
+             request.resource.data.userId == request.resource.data.previousConsultantId)) ||
+          (request.resource.data.eventType == 'audit_report_submitted' &&
+            isQuality() &&
+            request.resource.data.caseId is string &&
+            exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+            consultationDoc(request.resource.data.caseId).qualitySpecialistId == request.auth.uid &&
+            isAdminUserId(request.resource.data.userId)) ||
+          (request.resource.data.eventType == 'support_ticket_created' &&
+            request.resource.data.ticketId is string &&
+            exists(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)) &&
+            get(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)).data.userId == request.auth.uid &&
+            isAdminUserId(request.resource.data.userId)) ||
+          (request.resource.data.eventType == 'support_ticket_replied' &&
+            request.resource.data.ticketId is string &&
+            exists(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)) &&
+            ((isAdmin() && request.resource.data.userId == get(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)).data.userId) ||
+             (!isAdmin() && get(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)).data.userId == request.auth.uid && isAdminUserId(request.resource.data.userId)))) ||
+          (request.resource.data.eventType == 'support_ticket_closed' &&
+            isAdmin() &&
+            request.resource.data.ticketId is string &&
+            exists(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)) &&
+            request.resource.data.userId == get(/databases/$(database)/documents/supportMessages/$(request.resource.data.ticketId)).data.userId)
+        );
     }
 
     // ===============================================================
@@ -274,15 +377,19 @@ service cloud.firestore {
     match /consultations/{consultationId} {
       allow read: if isAuthenticated() && (request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId || request.auth.uid == resource.data.qualitySpecialistId || isAdmin());
       allow create: if isAuthenticated() && isValidConsultation(request.resource.data) && (request.auth.uid == request.resource.data.clientId || isAdmin());
-      allow update: if isAuthenticated() && isValidConsultation(request.resource.data) && 
-        (request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId || isAdmin()) &&
-        areImmutableFieldsUnchanged(['clientId', 'createdAt']);
+      allow update: if isAuthenticated() && isValidConsultation(request.resource.data) &&
+        areImmutableFieldsUnchanged(['clientId', 'createdAt']) &&
+        (
+          isAdmin() ||
+          clientCanUpdateConsultation() ||
+          consultantCanUpdateConsultation()
+        );
     }
 
     match /messages/{messageId} {
       allow read: if isAuthenticated() && (
         isAdmin() ||
-        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) && 
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
          (
            get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.clientId == request.auth.uid ||
            get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.consultantId == request.auth.uid ||
@@ -290,11 +397,17 @@ service cloud.firestore {
          )
         )
       );
-      allow create: if isAuthenticated() && isValidMessage(request.resource.data) && (
-        request.auth.uid == request.resource.data.clientId ||
-        request.auth.uid == request.resource.data.consultantId ||
-        isAdmin()
-      );
+      allow create: if isAuthenticated() && isValidMessage(request.resource.data) &&
+        exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+        (
+          (isAdmin() && request.resource.data.clientId == consultationDoc(request.resource.data.caseId).clientId) ||
+          (consultationDoc(request.resource.data.caseId).consultantId != null &&
+            request.resource.data.clientId == consultationDoc(request.resource.data.caseId).clientId &&
+            request.resource.data.consultantId == consultationDoc(request.resource.data.caseId).consultantId &&
+            (request.auth.uid == consultationDoc(request.resource.data.caseId).clientId || request.auth.uid == consultationDoc(request.resource.data.caseId).consultantId)
+          )
+        ) &&
+        request.resource.data.senderRole == currentUserRole();
     }
 
     match /auditReports/{reportId} {
@@ -310,8 +423,8 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
-      allow update: if (isOwner(resource.data.userId) || isAdmin()) && 
+      allow create: if isAuthenticated() && canCreateNotification();
+      allow update: if (isOwner(resource.data.userId) || isAdmin()) &&
         request.resource.data.read is bool &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
     }

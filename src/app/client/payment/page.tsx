@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { Button, Card } from '@/src/components/UI';
-import { paymentService } from '@/src/lib/paymentService';
 import { consultationService, settingsService } from '@/src/lib/db';
 import { IntakeData } from '@/src/types';
 import { Shield, CreditCard, Lock, CheckCircle2, ArrowLeft, UserCheck, ExternalLink } from 'lucide-react';
@@ -61,21 +60,21 @@ export default function PaymentPage() {
 
     setProcessing(true);
     try {
-      const result = await paymentService.processPayment(consultationFee);
-      if (result.success) {
-        const caseId = await consultationService.createConsultation(
-          profile!.uid,
-          profile!.displayName || profile!.email || 'Client',
-          profile!.avatarUrl || undefined,
-          intakeData
-        );
-        localStorage.removeItem('pending_intake');
-        setSuccess(true);
-        toast.success(t('payment.success_title'));
-        setTimeout(() => {
-          router.push(`/client/cases/${caseId}`);
-        }, 2000);
-      }
+      const caseId = await consultationService.createConsultation(
+        profile!.uid,
+        profile!.displayName || profile!.email || 'Client',
+        profile!.avatarUrl || undefined,
+        intakeData
+      );
+
+      if (!caseId) throw new Error('consultation_create_failed');
+
+      localStorage.removeItem('pending_intake');
+      setSuccess(true);
+      toast.success(t('payment.success_title'));
+      setTimeout(() => {
+        router.push(`/client/cases/${caseId}`);
+      }, 2000);
     } catch (error) {
       toast.error(t('payment.error_failed'));
     } finally {

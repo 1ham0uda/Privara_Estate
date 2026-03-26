@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
-import { UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile, QualityAuditReport, UserRole } from '../types';
+import { UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile, QualityAuditReport, UserRole, AppNotification, NotificationEventType } from '../types';
 
 enum OperationType {
   CREATE = 'create',
@@ -24,6 +24,21 @@ enum OperationType {
   LIST = 'list',
   GET = 'get',
   WRITE = 'write',
+}
+
+interface NotificationPayload {
+  userId: string;
+  title: string;
+  message: string;
+  link?: string;
+  actorId?: string;
+  eventType?: NotificationEventType;
+  caseId?: string;
+  ticketId?: string;
+  previousConsultantId?: string | null;
+  titleKey?: string;
+  messageKey?: string;
+  messageParams?: Record<string, string>;
 }
 
 interface FirestoreErrorInfo {
@@ -170,7 +185,7 @@ export const consultationService = {
               consultantName: intake.selectedConsultantName,
             }
           : {}),
-        paymentStatus: 'paid', // In MVP, we assume this is called after payment success
+        paymentStatus: 'pending',
         status: hasSelectedConsultant ? 'assigned' : 'new',
         stage: 'intake',
         intake: normalizedIntake,
@@ -183,24 +198,39 @@ export const consultationService = {
       const adminSnapshot = await getDocs(adminQuery);
       await Promise.all(
         adminSnapshot.docs.map((adminDoc) =>
-          notificationService.sendNotification(
-            adminDoc.id,
-            'استشارة جديدة',
-            hasSelectedConsultant
-              ? `قام ${clientName} بطلب استشارة جديدة مع اختيار المستشار ${intake.selectedConsultantName}.`
-              : `قام ${clientName} بطلب استشارة جديدة بدون اختيار مستشار.`,
-            `/admin/cases/${newDoc.id}`
-          )
+          notificationService.sendNotification({
+            userId: adminDoc.id,
+            title: 'New consultation request',
+            message: hasSelectedConsultant
+              ? `${clientName || 'Client'} submitted a consultation request and selected ${intake.selectedConsultantName}.`
+              : `${clientName || 'Client'} submitted a consultation request without selecting a consultant.`,
+            link: `/admin/cases/${newDoc.id}`,
+            eventType: 'consultation_created',
+            caseId: newDoc.id,
+            titleKey: 'notifications.consultation_created.title',
+            messageKey: hasSelectedConsultant
+              ? 'notifications.consultation_created.message_with_consultant'
+              : 'notifications.consultation_created.message_without_consultant',
+            messageParams: {
+              clientName: clientName || 'Client',
+              consultantName: intake.selectedConsultantName || '',
+            },
+          })
         )
       );
 
       if (hasSelectedConsultant) {
-        await notificationService.sendNotification(
-          intake.selectedConsultantUid,
-          'استشارة جديدة مسندة إليك',
-          `تم إرسال استشارة جديدة إليك من قبل ${clientName || 'عميل'}.`,
-          `/consultant/cases/${newDoc.id}`
-        );
+        await notificationService.sendNotification({
+          userId: intake.selectedConsultantUid,
+          title: 'New consultation assigned to you',
+          message: `${clientName || 'Client'} submitted a consultation request and selected you.`,
+          link: `/consultant/cases/${newDoc.id}`,
+          eventType: 'consultation_created',
+          caseId: newDoc.id,
+          titleKey: 'notifications.consultation_assigned.title',
+          messageKey: 'notifications.consultation_assigned.message_consultant',
+          messageParams: { clientName: clientName || 'Client' },
+        });
       }
 
       return newDoc.id;
@@ -223,21 +253,29 @@ export const consultationService = {
         updatedAt: serverTimestamp(),
       });
 
-      // Notify Client
-      notificationService.sendNotification(
-        consultation.clientId,
-        'تم تحديد مستشار',
-        `تم تحديد المستشار ${consultantName} لاستشارتك.`,
-        `/client/cases/${caseId}`
-      );
+      await notificationService.sendNotification({
+        userId: consultation.clientId,
+        title: 'Consultant assigned',
+        message: `${consultantName} has been assigned to your consultation.`,
+        link: `/client/cases/${caseId}`,
+        eventType: 'consultation_assigned',
+        caseId,
+        titleKey: 'notifications.consultation_assigned.title',
+        messageKey: 'notifications.consultation_assigned.message_client',
+        messageParams: { consultantName },
+      });
 
-      // Notify Consultant
-      notificationService.sendNotification(
-        consultantId,
-        'استشارة جديدة مسندة إليك',
-        `تم إسناد استشارة جديدة لك من قبل ${consultation.clientName || 'عميل'}.`,
-        `/consultant/cases/${caseId}`
-      );
+      await notificationService.sendNotification({
+        userId: consultantId,
+        title: 'New consultation assigned to you',
+        message: `${consultation.clientName || 'Client'} has been assigned to you.`,
+        link: `/consultant/cases/${caseId}`,
+        eventType: 'consultation_assigned',
+        caseId,
+        titleKey: 'notifications.consultation_assigned.title',
+        messageKey: 'notifications.consultation_assigned.message_consultant',
+        messageParams: { clientName: consultation.clientName || 'Client' },
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
@@ -252,13 +290,17 @@ export const consultationService = {
         updatedAt: serverTimestamp(),
       });
 
-      // Notify Quality Specialist
-      notificationService.sendNotification(
-        qualityId,
-        'مهمة جودة جديدة',
-        `تم إسناد مهمة مراجعة جودة لك في القضية رقم ${caseId.substring(0, 8)}.`,
-        `/quality/cases/${caseId}`
-      );
+      await notificationService.sendNotification({
+        userId: qualityId,
+        title: 'New quality review assignment',
+        message: `You were assigned to review case ${caseId.substring(0, 8)}.`,
+        link: `/quality/cases/${caseId}`,
+        eventType: 'quality_assigned',
+        caseId,
+        titleKey: 'notifications.quality_assigned.title',
+        messageKey: 'notifications.quality_assigned.message',
+        messageParams: { caseNumber: caseId.substring(0, 8) },
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
@@ -284,14 +326,21 @@ export const consultationService = {
       // Notify Admin
       const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
       const adminSnapshot = await getDocs(adminQuery);
-      adminSnapshot.forEach(adminDoc => {
-        notificationService.sendNotification(
-          adminDoc.id,
-          'طلب تغيير مستشار',
-          `طلب عميل تغيير المستشار في القضية رقم ${caseId.substring(0, 8)}.`,
-          `/admin/cases/${caseId}`
-        );
-      });
+      await Promise.all(
+        adminSnapshot.docs.map((adminDoc) =>
+          notificationService.sendNotification({
+            userId: adminDoc.id,
+            title: 'Consultant change requested',
+            message: `A client requested a consultant change for case ${caseId.substring(0, 8)}.`,
+            link: `/admin/cases/${caseId}`,
+            eventType: 'consultant_change_requested',
+            caseId,
+            titleKey: 'notifications.consultant_change_requested.title',
+            messageKey: 'notifications.consultant_change_requested.message',
+            messageParams: { caseNumber: caseId.substring(0, 8) },
+          })
+        )
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -319,30 +368,44 @@ export const consultationService = {
         await updateDoc(requestRef, { status: 'approved' });
       }
 
-      // Notify Client
-      notificationService.sendNotification(
-        consultation.clientId,
-        'تم تغيير المستشار',
-        `تم تغيير المستشار الخاص بك إلى ${newConsultantName}.`,
-        `/client/cases/${caseId}`
-      );
+      await notificationService.sendNotification({
+        userId: consultation.clientId,
+        title: 'Consultant reassigned',
+        message: `Your consultant was changed to ${newConsultantName}.`,
+        link: `/client/cases/${caseId}`,
+        eventType: 'consultant_reassigned',
+        caseId,
+        previousConsultantId: oldConsultantId || null,
+        titleKey: 'notifications.consultant_reassigned.title',
+        messageKey: 'notifications.consultant_reassigned.message_client',
+        messageParams: { consultantName: newConsultantName },
+      });
 
-      // Notify New Consultant
-      notificationService.sendNotification(
-        newConsultantId,
-        'استشارة جديدة (إعادة إسناد)',
-        `تم إسناد استشارة جديدة لك بدلاً من المستشار السابق.`,
-        `/consultant/cases/${caseId}`
-      );
+      await notificationService.sendNotification({
+        userId: newConsultantId,
+        title: 'Consultation reassigned to you',
+        message: `A consultation was reassigned to you.`,
+        link: `/consultant/cases/${caseId}`,
+        eventType: 'consultant_reassigned',
+        caseId,
+        previousConsultantId: oldConsultantId || null,
+        titleKey: 'notifications.consultant_reassigned.title',
+        messageKey: 'notifications.consultant_reassigned.message_new_consultant',
+      });
 
-      // Notify Old Consultant
       if (oldConsultantId) {
-        notificationService.sendNotification(
-          oldConsultantId,
-          'تم سحب استشارة',
-          `تم سحب الاستشارة رقم ${caseId.substring(0, 8)} منك وإسنادها لمستشار آخر.`,
-          `/consultant/dashboard`
-        );
+        await notificationService.sendNotification({
+          userId: oldConsultantId,
+          title: 'Consultation reassigned',
+          message: `Case ${caseId.substring(0, 8)} was reassigned to another consultant.`,
+          link: `/consultant/dashboard`,
+          eventType: 'consultant_reassigned',
+          caseId,
+          previousConsultantId: oldConsultantId,
+          titleKey: 'notifications.consultant_reassigned.title',
+          messageKey: 'notifications.consultant_reassigned.message_previous_consultant',
+          messageParams: { caseNumber: caseId.substring(0, 8) },
+        });
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -558,14 +621,22 @@ export const chatService = {
 };
 
 export const notificationService = {
-  async sendNotification(userId: string, title: string, message: string, link?: string): Promise<void> {
+  async sendNotification(payload: NotificationPayload): Promise<void> {
     const path = 'notifications';
     try {
       await addDoc(collection(db, 'notifications'), {
-        userId: userId || '',
-        title: title || '',
-        message: message || '',
-        link: link || null,
+        userId: payload.userId || '',
+        title: payload.title || '',
+        message: payload.message || '',
+        link: payload.link || null,
+        actorId: payload.actorId || auth.currentUser?.uid || '',
+        eventType: payload.eventType || null,
+        caseId: payload.caseId || null,
+        ticketId: payload.ticketId || null,
+        previousConsultantId: payload.previousConsultantId || null,
+        titleKey: payload.titleKey || null,
+        messageKey: payload.messageKey || null,
+        messageParams: payload.messageParams || null,
         read: false,
         createdAt: serverTimestamp(),
       });
@@ -574,7 +645,7 @@ export const notificationService = {
     }
   },
 
-  subscribeToNotifications(userId: string, callback: (notifications: any[]) => void) {
+  subscribeToNotifications(userId: string, callback: (notifications: AppNotification[]) => void) {
     const path = 'notifications';
     const q = query(
       collection(db, 'notifications'),
@@ -584,7 +655,7 @@ export const notificationService = {
     );
 
     return onSnapshot(q, (snapshot) => {
-      const notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppNotification));
       callback(notifications);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -612,17 +683,23 @@ export const qualityService = {
         createdAt: serverTimestamp(),
       });
 
-      // Notify Admin
       const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
       const adminSnapshot = await getDocs(adminQuery);
-      adminSnapshot.forEach(adminDoc => {
-        notificationService.sendNotification(
-          adminDoc.id,
-          'تقرير جودة جديد',
-          `تم تقديم تقرير جودة جديد للقضية رقم ${report.caseId.substring(0, 8)}.`,
-          `/admin/cases/${report.caseId}`
-        );
-      });
+      await Promise.all(
+        adminSnapshot.docs.map((adminDoc) =>
+          notificationService.sendNotification({
+            userId: adminDoc.id,
+            title: 'New quality audit report',
+            message: `A new quality report was submitted for case ${report.caseId.substring(0, 8)}.`,
+            link: `/admin/cases/${report.caseId}`,
+            eventType: 'audit_report_submitted',
+            caseId: report.caseId,
+            titleKey: 'notifications.audit_report_submitted.title',
+            messageKey: 'notifications.audit_report_submitted.message',
+            messageParams: { caseNumber: report.caseId.substring(0, 8) },
+          })
+        )
+      );
 
       return newDoc.id;
     } catch (error) {
@@ -749,12 +826,17 @@ export const supportService = {
       const adminSnapshot = await getDocs(adminQuery);
       await Promise.all(
         adminSnapshot.docs.map((adminDoc) =>
-          notificationService.sendNotification(
-            adminDoc.id,
-            'طلب دعم جديد',
-            `قام ${userName} بإرسال طلب دعم جديد.`,
-            `/admin/support?ticketId=${newDoc.id}`
-          )
+          notificationService.sendNotification({
+            userId: adminDoc.id,
+            title: 'New support ticket',
+            message: `${userName} sent a new support request.`,
+            link: `/admin/support?ticketId=${newDoc.id}`,
+            eventType: 'support_ticket_created',
+            ticketId: newDoc.id,
+            titleKey: 'notifications.support_ticket_created.title',
+            messageKey: 'notifications.support_ticket_created.message',
+            messageParams: { userName },
+          })
         )
       );
 
@@ -810,21 +892,30 @@ export const supportService = {
             : `/admin/support?ticketId=${messageId}`;
 
       if (senderRole === 'admin') {
-        await notificationService.sendNotification(
-          data.userId,
-          'رد على طلب الدعم',
-          `قام فريق الدعم بالرد على طلبك.`,
-          supportPath
-        );
+        await notificationService.sendNotification({
+          userId: data.userId,
+          title: 'Support replied to your ticket',
+          message: 'The support team replied to your ticket.',
+          link: supportPath,
+          eventType: 'support_ticket_replied',
+          ticketId: messageId,
+          titleKey: 'notifications.support_ticket_replied.title',
+          messageKey: 'notifications.support_ticket_replied.message_user',
+        });
       } else if (adminSnapshot) {
         await Promise.all(
           adminSnapshot.docs.map((adminDoc) =>
-            notificationService.sendNotification(
-              adminDoc.id,
-              'رد جديد على طلب الدعم',
-              `قام ${senderName} بالرد على تذكرة الدعم.`,
-              `/admin/support?ticketId=${messageId}`
-            )
+            notificationService.sendNotification({
+              userId: adminDoc.id,
+              title: 'New support reply',
+              message: `${senderName} replied to a support ticket.`,
+              link: `/admin/support?ticketId=${messageId}`,
+              eventType: 'support_ticket_replied',
+              ticketId: messageId,
+              titleKey: 'notifications.support_ticket_replied.title',
+              messageKey: 'notifications.support_ticket_replied.message_admin',
+              messageParams: { userName: senderName },
+            })
           )
         );
       }
@@ -851,16 +942,20 @@ export const supportService = {
         ...(closedByName ? { closedByName } : {}),
       });
 
-      await notificationService.sendNotification(
-        data.userId,
-        'تم إغلاق طلب الدعم',
-        `تم إغلاق تذكرتك من قبل فريق الدعم.`,
-        data.userRole === 'client'
+      await notificationService.sendNotification({
+        userId: data.userId,
+        title: 'Support ticket closed',
+        message: 'Your support ticket was closed by the support team.',
+        link: data.userRole === 'client'
           ? `/client/support?ticketId=${messageId}`
           : data.userRole === 'consultant'
             ? `/consultant/support?ticketId=${messageId}`
-            : `/quality/support?ticketId=${messageId}`
-      );
+            : `/quality/support?ticketId=${messageId}`,
+        eventType: 'support_ticket_closed',
+        ticketId: messageId,
+        titleKey: 'notifications.support_ticket_closed.title',
+        messageKey: 'notifications.support_ticket_closed.message',
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
@@ -893,12 +988,9 @@ export const settingsService = {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         return docSnap.data();
-      } else {
-        // Default settings
-        const defaultSettings = { consultationFee: 500 };
-        await setDoc(docRef, defaultSettings);
-        return defaultSettings;
       }
+
+      return { consultationFee: 500 };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
       return { consultationFee: 500 };

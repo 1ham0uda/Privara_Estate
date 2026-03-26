@@ -45,6 +45,7 @@ export default function AdminCaseDetails() {
   const [selectedQualityId, setSelectedQualityId] = useState('');
   const [isReassigning, setIsReassigning] = useState(false);
   const [isAssigningQuality, setIsAssigningQuality] = useState(false);
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
 
   useEffect(() => {
     if (caseId) {
@@ -134,6 +135,21 @@ export default function AdminCaseDetails() {
     }
   };
 
+  const handleMarkPaymentPaid = async () => {
+    if (!caseId || consultation?.paymentStatus === 'paid') return;
+
+    setIsMarkingPaid(true);
+    try {
+      await consultationService.updateConsultation(caseId as string, { paymentStatus: 'paid' });
+      setConsultation(prev => prev ? { ...prev, paymentStatus: 'paid' } : prev);
+      toast.success(t('admin.case_details.payment_marked_paid'));
+    } catch (error) {
+      toast.error(t('admin.case_details.payment_mark_paid_failed'));
+    } finally {
+      setIsMarkingPaid(false);
+    }
+  };
+
   if (authLoading || !consultation) return null;
 
   return (
@@ -183,7 +199,12 @@ export default function AdminCaseDetails() {
                 </div>
                 <div className={`p-4 bg-gray-50 rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
                   <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('dashboard.payment_status')}</p>
-                  <p className="font-bold text-emerald-600 capitalize">{consultation.paymentStatus}</p>
+                  <p className={`font-bold capitalize ${consultation.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>{t(`payment.status.${consultation.paymentStatus}`)}</p>
+                  {consultation.paymentStatus !== 'paid' ? (
+                    <Button size="sm" className="mt-3 w-full text-xs" onClick={handleMarkPaymentPaid} loading={isMarkingPaid}>
+                      {t('admin.case_details.mark_payment_paid')}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </Card>
@@ -395,9 +416,9 @@ export default function AdminCaseDetails() {
               <Card className="p-6 border-none shadow-sm" hover={false}>
                 <div className="space-y-4">
                   <div className={`flex items-start gap-3 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full mt-1.5" />
+                    <div className={`w-2 h-2 rounded-full mt-1.5 ${consultation.paymentStatus === 'paid' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                     <div className="text-xs">
-                      <p className="font-bold">{t('admin.case_details.payment_confirmed')}</p>
+                      <p className="font-bold">{consultation.paymentStatus === 'paid' ? t('admin.case_details.payment_confirmed') : t('admin.case_details.payment_pending')}</p>
                       <p className="text-gray-400">{formatDate(consultation.createdAt, language)}</p>
                     </div>
                   </div>

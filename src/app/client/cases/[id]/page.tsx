@@ -113,14 +113,14 @@ export default function CaseDetails() {
   const currentStageIndex = stages.indexOf(consultation.stage);
 
   return (
-    <div className="min-h-screen bg-gray-50" dir="ltr">
-      <Navbar forceLanguage="en" />
+    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+      <Navbar />
       <Toaster />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex items-center justify-between mb-8">
           <button onClick={() => router.back()} className="flex items-center text-gray-500 hover:text-black transition-colors">
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back
+            <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} /> {t('client.case.back')}
           </button>
           
           <div className="relative">
@@ -137,10 +137,18 @@ export default function CaseDetails() {
                   disabled={consultation.reassignmentRequestStatus === 'pending' || !consultation.consultantId}
                   className="w-full text-start px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
-                  {consultation.reassignmentRequestStatus === 'pending' ? 'Request Pending' : 'Request Consultant Change'}
+                  {consultation.reassignmentRequestStatus === 'pending' ? t('client.case.request_pending') : t('client.case.request_consultant_change')}
                 </button>
-                <button className="w-full text-start px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Report an Issue</button>
-                <button className="w-full text-start px-4 py-2 text-sm text-rose-600 hover:bg-rose-50">Cancel Consultation</button>
+                <button
+                  onClick={() => {
+                    setShowOptions(false);
+                    toast.success(t('client.case.issue_redirected'));
+                    router.push('/client/support');
+                  }}
+                  className="w-full text-start px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {t('dashboard.report_issue')}
+                </button>
               </div>
             )}
           </div>
@@ -159,12 +167,12 @@ export default function CaseDetails() {
                     </Badge>
                     <span className="text-sm text-gray-400">Case #{consultation.id.slice(-6)}</span>
                   </div>
-                  <h1 className="text-3xl font-bold text-gray-900">Consultation Details</h1>
-                  <p className="text-gray-500">Started on {formatDate(consultation.createdAt, language)}</p>
+                  <h1 className="text-3xl font-bold text-gray-900">{t('client.case.title')}</h1>
+                  <p className="text-gray-500">{t('consultant.started_on')} {formatDate(consultation.createdAt, language)}</p>
                 </div>
                 <Link href={`/cases/${caseId}/chat`}>
                   <Button className="h-12 rounded-xl px-8">
-                    <MessageSquare className="w-5 h-5 mr-2" /> Open Chat
+                    <MessageSquare className={`w-5 h-5 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('client.case.open_chat')}
                   </Button>
                 </Link>
               </div>
@@ -202,8 +210,8 @@ export default function CaseDetails() {
                 <Card className="p-8 border-indigo-100 bg-indigo-50/30" hover={false}>
                   <div className="text-center max-w-md mx-auto">
                     <Star className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">How was your experience?</h2>
-                    <p className="text-gray-600 mb-6">Your feedback helps us improve our service and recognize great consultants.</p>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('rating.title')}</h2>
+                    <p className="text-gray-600 mb-6">{t('dashboard.feedback_help')}</p>
                     
                     <div className="flex justify-center gap-2 mb-6">
                       {[1, 2, 3, 4, 5].map((star) => (
@@ -218,7 +226,7 @@ export default function CaseDetails() {
                     </div>
 
                     <Input
-                      placeholder="Tell us more about the service..."
+                      placeholder={t('rating.feedback_placeholder')}
                       value={feedback}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFeedback(e.target.value)}
                       className="mb-6"
@@ -229,7 +237,7 @@ export default function CaseDetails() {
                       disabled={submittingRating}
                       className="w-full h-12 rounded-xl"
                     >
-                      {submittingRating ? 'Submitting...' : 'Submit Feedback'}
+                      {submittingRating ? t('common.loading') : t('rating.submit')}
                     </Button>
                   </div>
                 </Card>
@@ -239,7 +247,7 @@ export default function CaseDetails() {
             {consultation.rating && (
               <Card className="p-6 bg-gray-50 border-none" hover={false}>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-900">Your Feedback</h3>
+                  <h3 className="font-bold text-gray-900">{t('rating.title')}</h3>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <Star 
@@ -375,7 +383,7 @@ export default function CaseDetails() {
               ) : (
                 <Card className="p-8 text-center bg-gray-50 border-dashed border-2 border-gray-200" hover={false}>
                   <Clock className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-                  <p className="text-sm text-gray-500">Assignment in progress...</p>
+                  <p className="text-sm text-gray-500">{t('client.case.assignment_in_progress')}</p>
                   {consultation.intake.selectedConsultantName ? (
                     <div className="mt-4 rounded-xl bg-white border border-gray-100 p-4 text-left">
                       <p className="text-xs text-gray-400 uppercase font-bold mb-1">{t('intake.requested_consultant_label')}</p>
@@ -393,7 +401,7 @@ export default function CaseDetails() {
 
             {/* Report Card */}
             <section>
-              <h2 className="text-xl font-bold mb-6">Final Report</h2>
+              <h2 className="text-xl font-bold mb-6">{t('client.case.report_ready')}</h2>
               {consultation.reportUrl ? (
                 <Card className="p-6 bg-emerald-50 border-emerald-100 shadow-sm" hover={false}>
                   <div className="flex items-center gap-4 mb-6">
@@ -401,20 +409,22 @@ export default function CaseDetails() {
                       <FileText className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="font-bold text-emerald-900">Consultation Report</p>
+                      <p className="font-bold text-emerald-900">{t('client.case.report_ready')}</p>
                       <p className="text-xs text-emerald-600">PDF Document • 2.4 MB</p>
                     </div>
                   </div>
-                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-xl">
-                    <Download className="w-4 h-4 mr-2" /> Download Report
-                  </Button>
+                  <a href={consultation.reportUrl} target="_blank" rel="noopener noreferrer" className="block">
+                    <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-xl">
+                      <Download className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('client.case.download_report')}
+                    </Button>
+                  </a>
                 </Card>
               ) : (
                 <Card className="p-6 bg-gray-50 border-none shadow-sm" hover={false}>
                   <div className="flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-gray-400 mt-0.5" />
                     <p className="text-sm text-gray-500">
-                      Your final recommendation report will be available here once the consultation is complete.
+                      {t('client.case.report_pending')}
                     </p>
                   </div>
                 </Card>
@@ -432,14 +442,14 @@ export default function CaseDetails() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
           >
-            <h2 className="text-2xl font-bold mb-4">Request Consultant Change</h2>
+            <h2 className="text-2xl font-bold mb-4">{t('client.case.reassignment_title')}</h2>
             <p className="text-gray-600 mb-6">
-              If you feel this consultant isn&apos;t the right match for your needs, you can request a change. Please provide a reason for our admin team.
+              {t('client.case.reassignment_desc')}
             </p>
             
             <textarea
               className="w-full h-32 p-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black focus:border-transparent mb-6 resize-none"
-              placeholder="Why would you like to change your consultant?"
+              placeholder={t('client.case.reassignment_placeholder')}
               value={reassignmentReason}
               onChange={(e) => setReassignmentReason(e.target.value)}
             />
@@ -450,14 +460,14 @@ export default function CaseDetails() {
                 className="flex-1 rounded-xl"
                 onClick={() => setShowReassignmentModal(false)}
               >
-                Cancel
+                {t('common.back')}
               </Button>
               <Button 
                 className="flex-1 rounded-xl"
                 onClick={handleReassignmentRequest}
                 disabled={isSubmittingReassignment}
               >
-                {isSubmittingReassignment ? 'Sending...' : 'Send Request'}
+                {isSubmittingReassignment ? t('common.loading') : t('client.case.send_request')}
               </Button>
             </div>
           </motion.div>

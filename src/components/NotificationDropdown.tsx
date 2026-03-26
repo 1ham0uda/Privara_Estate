@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { notificationService } from '@/src/lib/db';
+import { AppNotification } from '@/src/types';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,9 +11,8 @@ import Link from 'next/link';
 
 export default function NotificationDropdown() {
   const { user } = useAuth();
-  const { t } = useLanguage();
-  const isRTL = false;
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const { t, isRTL, language } = useLanguage();
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +28,14 @@ export default function NotificationDropdown() {
   }, [user]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  const resolveNotificationText = (notification: AppNotification, key: 'title' | 'message') => {
+    const translationKey = key === 'title' ? notification.titleKey : notification.messageKey;
+    if (translationKey) {
+      return t(translationKey, notification.messageParams);
+    }
+    return key === 'title' ? notification.title : notification.message;
+  };
 
   const handleMarkAsRead = async (id: string) => {
     await notificationService.markAsRead(id);
@@ -97,9 +105,9 @@ export default function NotificationDropdown() {
                       className={`p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors relative ${!notification.read ? 'bg-indigo-50/30' : ''}`}
                     >
                       <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 text-left">
-                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                          <p className="text-xs text-gray-600 mt-1">{notification.message}</p>
+                        <div className={`flex-1 ${isRTL ? 'text-right' : 'text-left'}`}>
+                          <p className="text-sm font-medium text-gray-900">{resolveNotificationText(notification, 'title')}</p>
+                          <p className="text-xs text-gray-600 mt-1">{resolveNotificationText(notification, 'message')}</p>
                           {notification.link && (
                             <Link 
                               href={notification.link}
@@ -121,18 +129,12 @@ export default function NotificationDropdown() {
                           </button>
                         )}
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-2 text-right">
-                        {notification.createdAt?.toDate ? new Date(notification.createdAt.toDate()).toLocaleString() : ''}
+                      <p className={`text-[10px] text-gray-400 mt-2 ${isRTL ? 'text-left' : 'text-right'}`}>
+                        {notification.createdAt?.toDate ? new Date(notification.createdAt.toDate()).toLocaleString(language) : ''}
                       </p>
                     </div>
                   ))
                 )}
-              </div>
-
-              <div className="p-3 bg-gray-50 text-center">
-                <button className="text-xs font-medium text-gray-600 hover:text-black">
-                  {t('notifications.view_all')}
-                </button>
               </div>
             </motion.div>
           </>

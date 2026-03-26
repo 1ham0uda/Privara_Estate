@@ -49,6 +49,7 @@ export default function ConsultantCaseDetails() {
       consultationService.getConsultation(caseId as string).then(async (data) => {
         setConsultation(data);
         if (data?.tags) setSelectedTags(data.tags);
+        setInternalNotes(data?.internalNotes || '');
         
         // Use data from consultation object for client profile
         if (data?.clientId) {
@@ -137,6 +138,20 @@ export default function ConsultantCaseDetails() {
       toast.success(t('consultant.case_details.success_tags'));
     } catch (error) {
       toast.error(t('consultant.case_details.error_tags'));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSaveInternalNotes = async () => {
+    if (!caseId) return;
+    setUpdating(true);
+    try {
+      await consultationService.updateConsultation(caseId as string, { internalNotes });
+      setConsultation(prev => prev ? { ...prev, internalNotes } : prev);
+      toast.success(t('consultant.case_details.success_notes'));
+    } catch (error) {
+      toast.error(t('consultant.case_details.error_notes'));
     } finally {
       setUpdating(false);
     }
@@ -300,7 +315,7 @@ export default function ConsultantCaseDetails() {
                   className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all resize-none text-sm"
                 />
                 <div className={`mt-4 flex ${isRTL ? 'justify-start' : 'justify-end'}`}>
-                  <Button variant="secondary" className="rounded-lg h-10">{t('consultant.case_details.save_notes')}</Button>
+                  <Button variant="secondary" className="rounded-lg h-10" onClick={handleSaveInternalNotes} loading={updating}>{t('consultant.case_details.save_notes')}</Button>
                 </div>
               </Card>
             </section>
