@@ -2,14 +2,15 @@ import { Suspense } from 'react';
 import AdminSupportPageClient from './AdminSupportPageClient';
 
 type AdminSupportPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     ticketId?: string;
     messageId?: string;
-  };
+  }>;
 };
 
-export default function AdminSupportPage({ searchParams }: AdminSupportPageProps) {
-  const initialTicketId = searchParams?.ticketId || searchParams?.messageId || null;
+export default async function AdminSupportPage({ searchParams }: AdminSupportPageProps) {
+  const params = (await searchParams) ?? {};
+  const initialTicketId = params.ticketId || params.messageId || null;
 
   return (
     <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>

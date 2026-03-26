@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
@@ -48,7 +48,7 @@ export default function NewConsultation() {
     selectedConsultantName: '',
   });
 
-  const loadConsultants = async () => {
+  const loadConsultants = useCallback(async () => {
     setConsultantsLoading(true);
     setConsultantsError('');
     try {
@@ -66,11 +66,11 @@ export default function NewConsultation() {
     } finally {
       setConsultantsLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     void loadConsultants();
-  }, []);
+  }, [loadConsultants]);
 
   const selectedConsultant = useMemo(
     () => consultants.find((consultant) => consultant.uid === formData.selectedConsultantUid) || null,

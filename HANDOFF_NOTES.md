@@ -20,3 +20,11 @@
 ## Additional fixes
 - Removed duplicate translation keys from `src/context/LanguageContext.tsx` that were breaking TypeScript builds.
 - Updated project module/config files for Firebase App Hosting compatibility.
+
+
+Additional fixes in this handoff:
+- Reworked login and support pages to avoid Next.js prerender failures caused by useSearchParams in App Router pages.
+- Added server page wrappers plus client page components for login and role-based support pages.
+- Removed useSearchParams from shared support workspace and passed initial ticket IDs through props.
+- Wrapped consultant loading in useCallback to satisfy the current exhaustive-deps warning source.
+- Removed temporary junk files (abc.txt, testwrite) and tsbuildinfo from the delivered project.

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2, MessageSquare, Plus, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '@/src/context/AuthContext';
@@ -13,13 +12,12 @@ import { SupportMessage, UserRole } from '@/src/types';
 
 interface SupportWorkspaceProps {
   role: UserRole;
+  initialTicketId?: string | null;
 }
 
-export default function SupportWorkspace({ role }: SupportWorkspaceProps) {
+export default function SupportWorkspace({ role, initialTicketId = null }: SupportWorkspaceProps) {
   const { user, profile } = useAuth();
   const { t, isRTL, language } = useLanguage();
-  const searchParams = useSearchParams();
-  const ticketIdFromUrl = searchParams.get('ticketId') || searchParams.get('messageId');
   const [tickets, setTickets] = useState<SupportMessage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,8 +47,8 @@ export default function SupportWorkspace({ role }: SupportWorkspaceProps) {
   }, [user, t]);
 
   useEffect(() => {
-    if (ticketIdFromUrl && tickets.some((ticket) => ticket.id === ticketIdFromUrl)) {
-      setSelectedId(ticketIdFromUrl);
+    if (initialTicketId && tickets.some((ticket) => ticket.id === initialTicketId)) {
+      setSelectedId(initialTicketId);
       return;
     }
 
@@ -61,7 +59,7 @@ export default function SupportWorkspace({ role }: SupportWorkspaceProps) {
     if (selectedId && !tickets.some((ticket) => ticket.id === selectedId)) {
       setSelectedId(tickets[0]?.id || null);
     }
-  }, [ticketIdFromUrl, tickets, selectedId]);
+  }, [initialTicketId, tickets, selectedId]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedId) || null,
