@@ -14,7 +14,7 @@ import { toast, Toaster } from 'react-hot-toast';
 import { useLanguage } from '@/src/context/LanguageContext';
 
 export default function PaymentPage() {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { profile, loading } = useRoleGuard(['client']);
   const router = useRouter();
   const [intakeData, setIntakeData] = useState<IntakeData | null>(null);
@@ -31,9 +31,9 @@ export default function PaymentPage() {
 
     try {
       const parsed = JSON.parse(data) as IntakeData;
-      if (!parsed.selectedConsultantUid || !parsed.selectedConsultantName) {
+      if ((parsed.selectedConsultantUid && !parsed.selectedConsultantName) || (!parsed.selectedConsultantUid && parsed.selectedConsultantName)) {
         localStorage.removeItem('pending_intake');
-        toast.error(t('payment.missing_consultant'));
+        toast.error(t('payment.load_error'));
         router.push('/client/new-consultation');
         return;
       }
@@ -71,13 +71,13 @@ export default function PaymentPage() {
         );
         localStorage.removeItem('pending_intake');
         setSuccess(true);
-        toast.success('Payment Successful!');
+        toast.success(t('payment.success_title'));
         setTimeout(() => {
           router.push(`/client/cases/${caseId}`);
         }, 2000);
       }
     } catch (error) {
-      toast.error('Payment failed. Please try again.');
+      toast.error(t('payment.error_failed'));
     } finally {
       setProcessing(false);
     }
@@ -85,9 +85,11 @@ export default function PaymentPage() {
 
   if (loading || !intakeData) return null;
 
+  const hasSelectedConsultant = Boolean(intakeData.selectedConsultantUid && intakeData.selectedConsultantName);
+
   return (
-    <div className="min-h-screen bg-gray-50" dir="ltr">
-      <Navbar forceLanguage="en" />
+    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+      <Navbar />
       <Toaster />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -97,16 +99,16 @@ export default function PaymentPage() {
               onClick={() => router.back()}
               className="flex items-center text-gray-500 hover:text-black mb-8 transition-colors"
             >
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Intake
+              <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} /> {t('payment.back_to_intake')}
             </button>
 
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">Complete Payment</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">{t('payment.title')}</h1>
 
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <div className="space-y-6">
                 <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                  <span className="text-gray-500">Service</span>
-                  <span className="font-bold">Premium Real Estate Consultation</span>
+                  <span className="text-gray-500">{t('payment.service')}</span>
+                  <span className="font-bold">{t('payment.service_name')}</span>
                 </div>
 
                 <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5">
@@ -116,16 +118,22 @@ export default function PaymentPage() {
                         <UserCheck className="w-5 h-5 text-gray-700" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('intake.selected_consultant_label')}</p>
-                        <p className="font-bold text-gray-900">{intakeData.selectedConsultantName}</p>
-                        <p className="text-sm text-gray-500 mt-1">{t('payment.selected_consultant_helper')}</p>
+                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">
+                          {hasSelectedConsultant ? t('intake.selected_consultant_label') : t('payment.assignment_title')}
+                        </p>
+                        <p className="font-bold text-gray-900">
+                          {hasSelectedConsultant ? intakeData.selectedConsultantName : t('payment.assign_later_title')}
+                        </p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {hasSelectedConsultant ? t('payment.selected_consultant_helper') : t('payment.assign_later_desc')}
+                        </p>
                       </div>
                     </div>
 
-                    {intakeData.selectedConsultantUid ? (
+                    {hasSelectedConsultant && intakeData.selectedConsultantUid ? (
                       <Link href={`/consultants/${intakeData.selectedConsultantUid}`}>
                         <Button type="button" variant="outline" className="h-11 rounded-xl">
-                          <ExternalLink className="w-4 h-4 mr-2" />
+                          <ExternalLink className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
                           {t('intake.view_consultant_profile')}
                         </Button>
                       </Link>
@@ -135,24 +143,24 @@ export default function PaymentPage() {
 
                 <div className="space-y-4">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Goal</span>
-                    <span className="font-medium capitalize">{intakeData.goal}</span>
+                    <span className="text-gray-500">{t('intake.goal_label')}</span>
+                    <span className="font-medium capitalize">{t(`intake.goal_${intakeData.goal}`)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Preferred Area</span>
+                    <span className="text-gray-500">{t('intake.area_label')}</span>
                     <span className="font-medium">{intakeData.preferredArea}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Budget Range</span>
+                    <span className="text-gray-500">{t('intake.budget_label')}</span>
                     <span className="font-medium">{intakeData.budgetRange}</span>
                   </div>
                 </div>
                 <div className="pt-6 border-t border-gray-100">
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold">Total Amount</span>
+                    <span className="text-lg font-bold">{t('payment.total_amount')}</span>
                     <div className="text-right">
                       <p className="text-2xl font-bold">{consultationFee.toLocaleString()} EGP</p>
-                      <p className="text-xs text-gray-400">One-time payment</p>
+                      <p className="text-xs text-gray-400">{t('payment.one_time')}</p>
                     </div>
                   </div>
                 </div>
@@ -162,7 +170,7 @@ export default function PaymentPage() {
             <div className="mt-8 flex items-start gap-3 p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-100">
               <Shield className="w-5 h-5 mt-0.5" />
               <p className="text-sm">
-                Your payment is secure. We use industry-standard encryption to protect your data.
+                {t('payment.secure_msg')}
               </p>
             </div>
           </div>
@@ -173,34 +181,34 @@ export default function PaymentPage() {
                 <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
                   <CheckCircle2 className="w-10 h-10 text-emerald-600" />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
-                <p className="text-gray-500">Redirecting you to your new consultation...</p>
+                <h2 className="text-2xl font-bold mb-2">{t('payment.success_title')}</h2>
+                <p className="text-gray-500">{t('payment.success_desc')}</p>
               </Card>
             ) : (
               <Card className="bg-white border-none shadow-xl p-8" hover={false}>
                 <div className="flex items-center gap-2 mb-8">
                   <CreditCard className="w-6 h-6" />
-                  <h2 className="text-xl font-bold">Payment Details</h2>
+                  <h2 className="text-xl font-bold">{t('payment.details_title')}</h2>
                 </div>
 
                 <div className="space-y-6">
                   <div className="p-4 bg-gray-50 rounded-xl border-2 border-gray-100">
-                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Simulated Payment</p>
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">{t('payment.simulated_title')}</p>
                     <p className="text-sm text-gray-600">
-                      This is a demonstration. Clicking the button below will simulate a successful transaction.
+                      {t('payment.simulated_desc')}
                     </p>
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 text-xs text-gray-400 justify-center">
-                      <Lock className="w-3 h-3" /> Secure SSL Encryption
+                      <Lock className="w-3 h-3" /> {t('payment.secure_ssl')}
                     </div>
                     <Button
                       onClick={handlePayment}
                       className="w-full h-14 text-lg rounded-2xl"
                       loading={processing}
                     >
-                      Confirm and Pay {consultationFee.toLocaleString()} EGP
+                      {t('payment.confirm_and_pay').replace('{amount}', consultationFee.toLocaleString())}
                     </Button>
                   </div>
                 </div>

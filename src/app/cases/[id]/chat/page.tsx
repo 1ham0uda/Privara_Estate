@@ -58,6 +58,7 @@ export default function ChatPage() {
   const { t, isRTL, language } = useLanguage();
   const isQuality = profile?.role === 'quality';
   const canOpenCallFallback = profile?.role === 'client' || profile?.role === 'consultant';
+  const isClientOrConsultant = profile?.role === 'client' || profile?.role === 'consultant';
 
   const [otherUser, setOtherUser] = useState<UserProfile | null>(null);
 
@@ -315,6 +316,9 @@ export default function ChatPage() {
 
   if (authLoading || !consultation) return null;
 
+  const hasAssignedConsultant = Boolean(consultation.consultantId);
+  const chatLockedUntilAssignment = Boolean(isClientOrConsultant && !hasAssignedConsultant);
+
   return (
     <div className={`h-screen flex flex-col bg-gray-50 ${isRTL ? 'rtl' : 'ltr'}`}>
       <Navbar />
@@ -392,7 +396,15 @@ export default function ChatPage() {
           ref={scrollRef}
           className="flex-1 overflow-y-auto p-6 space-y-6 bg-white"
         >
-          {messages.length === 0 ? (
+          {chatLockedUntilAssignment ? (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+                <MessageSquare className="w-8 h-8 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">{t('chat.locked_until_assignment_title')}</h3>
+              <p className="text-gray-500 max-w-sm">{t('chat.locked_until_assignment_desc')}</p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
                 <MessageSquare className="w-8 h-8 text-gray-300" />
@@ -455,7 +467,7 @@ export default function ChatPage() {
         </div>
 
         {/* Chat Input */}
-        {!isQuality && (
+        {!isQuality && !chatLockedUntilAssignment && (
           <div className="bg-white rounded-b-2xl border-t border-gray-100 p-4 shadow-sm">
             {imagePreview && (
               <div className="mb-4 relative inline-block">

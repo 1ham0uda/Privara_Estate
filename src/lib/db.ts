@@ -146,30 +146,62 @@ export const consultationService = {
     const path = 'consultations';
     try {
       const consultationRef = collection(db, 'consultations');
+      const hasSelectedConsultant = Boolean(intake?.selectedConsultantUid && intake?.selectedConsultantName);
+      const normalizedIntake = {
+        ...intake,
+        ...(hasSelectedConsultant
+          ? {
+              selectedConsultantUid: intake.selectedConsultantUid,
+              selectedConsultantName: intake.selectedConsultantName,
+            }
+          : {
+              selectedConsultantUid: null,
+              selectedConsultantName: null,
+            }),
+      };
+
       const newDoc = await addDoc(consultationRef, {
         clientId: clientId || '',
         clientName: clientName || 'Unknown',
         clientAvatarUrl: clientAvatarUrl || null,
+        ...(hasSelectedConsultant
+          ? {
+              consultantId: intake.selectedConsultantUid,
+              consultantName: intake.selectedConsultantName,
+            }
+          : {}),
         paymentStatus: 'paid', // In MVP, we assume this is called after payment success
-        status: 'new',
+        status: hasSelectedConsultant ? 'assigned' : 'new',
         stage: 'intake',
-        intake: intake || {},
+        intake: normalizedIntake,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reassignmentRequestStatus: 'none',
       });
 
-      // Notify Admin
       const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
       const adminSnapshot = await getDocs(adminQuery);
-      adminSnapshot.forEach(adminDoc => {
-        notificationService.sendNotification(
-          adminDoc.id,
-          'استشارة جديدة',
-          `قام ${clientName} بطلب استشارة جديدة.`,
-          `/admin/cases/${newDoc.id}`
+      await Promise.all(
+        adminSnapshot.docs.map((adminDoc) =>
+          notificationService.sendNotification(
+            adminDoc.id,
+            'استشارة جديدة',
+            hasSelectedConsultant
+              ? `قام ${clientName} بطلب استشارة جديدة مع اختيار المستشار ${intake.selectedConsultantName}.`
+              : `قام ${clientName} بطلب استشارة جديدة بدون اختيار مستشار.`,
+            `/admin/cases/${newDoc.id}`
+          )
+        )
+      );
+
+      if (hasSelectedConsultant) {
+        await notificationService.sendNotification(
+          intake.selectedConsultantUid,
+          'استشارة جديدة مسندة إليك',
+          `تم إرسال استشارة جديدة إليك من قبل ${clientName || 'عميل'}.`,
+          `/consultant/cases/${newDoc.id}`
         );
-      });
+      }
 
       return newDoc.id;
     } catch (error) {

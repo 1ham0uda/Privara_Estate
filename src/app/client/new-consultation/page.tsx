@@ -104,12 +104,22 @@ export default function NewConsultation() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.selectedConsultantUid || !formData.selectedConsultantName) {
-      toast.error(t('intake.consultant_required'));
-      return;
+    const payload: IntakeData = {
+      ...formData,
+      ...(formData.selectedConsultantUid && formData.selectedConsultantName
+        ? {
+            selectedConsultantUid: formData.selectedConsultantUid,
+            selectedConsultantName: formData.selectedConsultantName,
+          }
+        : {}),
+    };
+
+    if (!payload.selectedConsultantUid) {
+      delete payload.selectedConsultantUid;
+      delete payload.selectedConsultantName;
     }
 
-    localStorage.setItem('pending_intake', JSON.stringify(formData));
+    localStorage.setItem('pending_intake', JSON.stringify(payload));
     router.push('/client/payment');
   };
 
@@ -233,6 +243,7 @@ export default function NewConsultation() {
                     <Search className="w-4 h-4" /> {t('intake.consultant_search_label')}
                   </label>
                   <p className="text-sm text-gray-500 mt-2">{t('intake.consultant_search_helper')}</p>
+                  <p className="text-sm text-gray-500 mt-1">{t('intake.consultant_optional_helper')}</p>
                 </div>
                 {selectedConsultant ? (
                   <Button type="button" variant="ghost" onClick={clearSelectedConsultant} className="text-sm">
@@ -251,6 +262,15 @@ export default function NewConsultation() {
                   className={`w-full py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all ${isRTL ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'}`}
                 />
               </div>
+
+              {!selectedConsultant ? (
+                <Card className="border-dashed border-2 border-gray-200 bg-gray-50 p-5" hover={false}>
+                  <div className={isRTL ? 'text-right' : ''}>
+                    <p className="font-bold text-gray-900">{t('intake.assign_later_title')}</p>
+                    <p className="text-sm text-gray-500 mt-1">{t('intake.assign_later_desc')}</p>
+                  </div>
+                </Card>
+              ) : null}
 
               {selectedConsultant ? (
                 <Card className="border-emerald-200 bg-emerald-50/70 p-5" hover={false}>
