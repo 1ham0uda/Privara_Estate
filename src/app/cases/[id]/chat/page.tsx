@@ -22,8 +22,6 @@ import {
   Link as LinkIcon,
   Mic,
   MicOff,
-  Play,
-  Pause,
   PhoneCall,
   PhoneIncoming,
   PhoneOff,
@@ -80,6 +78,45 @@ const RTC_CONFIGURATION: RTCConfiguration = {
 
 const TERMINAL_CALL_STATUSES = new Set(['declined', 'ended', 'missed']);
 
+const formatMediaDuration = (seconds?: number | null) => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '--:--';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+type PendingVoiceNote = {
+  blob: Blob;
+  mimeType: string;
+  previewUrl: string;
+  durationSec: number;
+};
+
+function VoiceNoteBubble({ src, isMe, label }: { src: string; isMe: boolean; label: string }) {
+  const [durationSec, setDurationSec] = useState<number | null>(null);
+
+  return (
+    <div className={`rounded-2xl border ${isMe ? 'border-white/15 bg-white/10' : 'border-gray-200 bg-white'} p-2.5 min-w-[220px] max-w-[260px]`}>
+      <audio
+        controls
+        preload="metadata"
+        src={src}
+        className="w-full h-10"
+        onLoadedMetadata={(event) => {
+          const nextDuration = event.currentTarget.duration;
+          if (Number.isFinite(nextDuration)) {
+            setDurationSec(nextDuration);
+          }
+        }}
+      />
+      <div className={`mt-2 flex items-center justify-between text-[11px] ${isMe ? 'text-white/80' : 'text-gray-500'}`}>
+        <span className="font-medium">{label}</span>
+        <span>{formatMediaDuration(durationSec)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const { profile, loading: authLoading } = useRoleGuard(['client', 'consultant', 'admin', 'quality']);
   const { id: caseId } = useParams();
@@ -98,10 +135,12 @@ export default function ChatPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingCancelledRef = useRef(false);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement>(null);
-  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [pendingVoiceNote, setPendingVoiceNote] = useState<PendingVoiceNote | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [showCallPanel, setShowCallPanel] = useState(false);
@@ -184,11 +223,7 @@ export default function ChatPage() {
     return consultation?.clientName || t('chat.client');
   };
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  const formatDuration = (seconds: number) => formatMediaDuration(seconds);
 
   useEffect(() => {
     if (caseId && profile) {
@@ -245,6 +280,16 @@ export default function ChatPage() {
       recordingTimerRef.current = null;
     }
   };
+
+
+  const discardPendingVoiceNote = useCallback(() => {
+    setPendingVoiceNote((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
+  }, []);
 
   const ensureRemotePlaybackContext = useCallback(async () => {
     try {
@@ -334,8 +379,9 @@ export default function ChatPage() {
     return () => {
       cleanupCallMedia();
       stopVoiceNoteRecordingTimer();
+      discardPendingVoiceNote();
     };
-  }, [cleanupCallMedia]);
+  }, [cleanupCallMedia, discardPendingVoiceNote]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -354,11 +400,20 @@ export default function ChatPage() {
   };
 
   const startRecording = async () => {
+    if (pendingVoiceNote) {
+      discardPendingVoiceNote();
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const preferredMimeType = chooseRecordingMimeType();
+      const mediaRecorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      recordingCancelledRef.current = false;
+      recordingStartedAtRef.current = Date.now();
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -366,13 +421,31 @@ export default function ChatPage() {
         }
       };
 
-      mediaRecorder.onstop = async () => {
-        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+      mediaRecorder.onstop = () => {
+        const currentStream = stream;
+        currentStream.getTracks().forEach(track => track.stop());
+
+        const startedAt = recordingStartedAtRef.current;
+        recordingStartedAtRef.current = null;
+        const durationSec = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 1000)) : Math.max(recordingTime, 1);
+        const mimeType = mediaRecorder.mimeType || preferredMimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (audioBlob.size > 0) {
-          await handleSendAudio(audioBlob, mimeType);
+        audioChunksRef.current = [];
+        mediaRecorderRef.current = null;
+
+        if (recordingCancelledRef.current || audioBlob.size === 0) {
+          recordingCancelledRef.current = false;
+          return;
         }
-        stream.getTracks().forEach(track => track.stop());
+
+        discardPendingVoiceNote();
+        const previewUrl = URL.createObjectURL(audioBlob);
+        setPendingVoiceNote({
+          blob: audioBlob,
+          mimeType,
+          previewUrl,
+          durationSec,
+        });
       };
 
       mediaRecorder.start();
@@ -392,6 +465,16 @@ export default function ChatPage() {
       setIsRecording(false);
       stopVoiceNoteRecordingTimer();
     }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      recordingCancelledRef.current = true;
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    setRecordingTime(0);
+    stopVoiceNoteRecordingTimer();
   };
 
   const handleSendAudio = async (blob: Blob, mimeType: string = 'audio/webm') => {
@@ -421,15 +504,11 @@ export default function ChatPage() {
     }
   };
 
-  const toggleAudio = (url: string) => {
-    if (playingAudio === url) {
-      audioPlayerRef.current?.pause();
-      setPlayingAudio(null);
-    } else if (audioPlayerRef.current) {
-      audioPlayerRef.current.src = url;
-      audioPlayerRef.current.play();
-      setPlayingAudio(url);
-    }
+  const sendPendingVoiceNote = async () => {
+    if (!pendingVoiceNote) return;
+    await handleSendAudio(pendingVoiceNote.blob, pendingVoiceNote.mimeType);
+    discardPendingVoiceNote();
+    setRecordingTime(0);
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -1028,10 +1107,14 @@ export default function ChatPage() {
           ) : (
             messages.map((msg) => {
               const isMe = msg.senderId === profile?.uid;
+              const bubbleBaseClass = isMe
+                ? 'bg-black text-white rounded-tr-none'
+                : 'bg-gray-100 text-gray-900 rounded-tl-none';
+
               return (
                 <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    <div className="flex items-center gap-2 mb-1 px-1">
+                  <div className={`max-w-[86%] sm:max-w-[78%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                    <div className="flex flex-wrap items-center gap-2 mb-1 px-1">
                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                         {isMe ? t('chat.you') : msg.senderName}
                       </span>
@@ -1039,30 +1122,35 @@ export default function ChatPage() {
                         {msg.createdAt ? formatDate(msg.createdAt, language) : t('chat.sending')}
                       </span>
                     </div>
-                    <div className={`px-4 py-3 rounded-2xl text-sm ${
-                      isMe ? 'bg-black text-white rounded-tr-none' : 'bg-gray-100 text-gray-900 rounded-tl-none'
-                    }`}>
+
+                    <div className={`rounded-2xl text-sm ${bubbleBaseClass} px-3 py-2.5 sm:px-4 sm:py-3 space-y-2`}>
                       {msg.imageUrl && (
-                        <div className="mb-2 rounded-lg overflow-hidden border border-white/10 relative w-full aspect-video">
-                          <Image src={msg.imageUrl} alt="Shared image" fill className="object-cover" referrerPolicy="no-referrer" />
-                        </div>
-                      )}
-                      {msg.type === 'audio' && msg.audioUrl ? (
-                        <div className="flex items-center gap-3 min-w-[150px]">
-                          <button
-                            onClick={() => toggleAudio(msg.audioUrl!)}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center ${isMe ? 'bg-white text-black' : 'bg-black text-white'}`}
-                          >
-                            {playingAudio === msg.audioUrl ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                          </button>
-                          <div className="flex-1 h-1 bg-gray-300 rounded-full overflow-hidden">
-                            <div className={`h-full bg-current ${isMe ? 'text-white' : 'text-black'}`} style={{ width: playingAudio === msg.audioUrl ? '100%' : '0%', transition: 'width 0.1s linear' }} />
+                        <button
+                          type="button"
+                          onClick={() => setLightboxImage(msg.imageUrl!)}
+                          className="block rounded-2xl overflow-hidden border border-white/10 bg-black/5 w-[220px] sm:w-[300px]"
+                        >
+                          <div className="relative aspect-[4/3] w-full">
+                            <Image
+                              src={msg.imageUrl}
+                              alt="Shared image"
+                              fill
+                              className="object-cover"
+                              referrerPolicy="no-referrer"
+                              unoptimized
+                              sizes="(max-width: 640px) 220px, 300px"
+                            />
                           </div>
-                          <span className="text-[10px] font-medium opacity-70">{t('chat.voice_note')}</span>
-                        </div>
-                      ) : (
-                        msg.text
+                        </button>
                       )}
+
+                      {msg.type === 'audio' && msg.audioUrl ? (
+                        <VoiceNoteBubble src={msg.audioUrl} isMe={isMe} label={t('chat.voice_note')} />
+                      ) : null}
+
+                      {msg.text ? (
+                        <p className="whitespace-pre-wrap break-words leading-6">{msg.text}</p>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1091,49 +1179,81 @@ export default function ChatPage() {
             )}
             <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
               <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-12 h-12 p-0 rounded-xl bg-gray-50 hover:bg-gray-100"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ImageIcon className="w-5 h-5 text-gray-500" />
-              </Button>
+
+              {!isRecording && !pendingVoiceNote && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-11 h-11 sm:w-12 sm:h-12 p-0 rounded-xl bg-gray-50 hover:bg-gray-100 shrink-0"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImageIcon className="w-5 h-5 text-gray-500" />
+                </Button>
+              )}
 
               {isRecording ? (
-                <div className="flex-1 flex items-center justify-between px-4 py-2 bg-red-50 border-2 border-red-100 rounded-xl animate-pulse">
+                <div className="flex-1 flex items-center justify-between gap-3 px-3 py-2.5 bg-red-50 border border-red-100 rounded-2xl">
                   <div className="flex items-center gap-2 text-red-600 font-bold text-sm">
                     <span className="w-2 h-2 bg-red-600 rounded-full animate-ping" />
                     {formatDuration(recordingTime)}
                   </div>
-                  <button type="button" onClick={stopRecording} className="text-red-600 font-bold text-sm hover:underline">
-                    {t('chat.stop')}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancelRecording} className="text-xs font-semibold text-gray-500 hover:text-black">
+                      {t('common.cancel')}
+                    </button>
+                    <Button type="button" variant="danger" className="h-9 rounded-xl px-3" onClick={stopRecording}>
+                      <MicOff className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                      {t('chat.stop')}
+                    </Button>
+                  </div>
+                </div>
+              ) : pendingVoiceNote ? (
+                <div className="flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <audio controls preload="metadata" src={pendingVoiceNote.previewUrl} className="w-full h-10" />
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
+                        <span className="font-medium">{t('chat.voice_note')}</span>
+                        <span>{formatDuration(pendingVoiceNote.durationSec)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button type="button" onClick={discardPendingVoiceNote} className="text-xs font-semibold text-gray-500 hover:text-black">
+                        {t('common.cancel')}
+                      </button>
+                      <Button type="button" className="h-9 rounded-xl px-3" onClick={sendPendingVoiceNote} loading={uploadingAudio}>
+                        <Send className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                        {t('common.send')}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <input
-                  type="text"
-                  placeholder={t('chat.placeholder')}
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all"
-                />
-              )}
+                <>
+                  <input
+                    type="text"
+                    placeholder={t('chat.placeholder')}
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    className="flex-1 min-w-0 px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all text-sm"
+                  />
 
-              {newMessage.trim() || selectedImage ? (
-                <Button type="submit" className="w-12 h-12 p-0 rounded-xl" loading={sending || uploadingImage}>
-                  <Send className="w-5 h-5" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant={isRecording ? 'danger' : 'ghost'}
-                  className={`w-12 h-12 p-0 rounded-xl ${!isRecording ? 'bg-gray-50 hover:bg-gray-100' : ''}`}
-                  onClick={isRecording ? stopRecording : startRecording}
-                  loading={uploadingAudio}
-                >
-                  {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-gray-500" />}
-                </Button>
+                  {newMessage.trim() || selectedImage ? (
+                    <Button type="submit" className="w-11 h-11 sm:w-12 sm:h-12 p-0 rounded-xl shrink-0" loading={sending || uploadingImage}>
+                      <Send className="w-5 h-5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-11 h-11 sm:w-12 sm:h-12 p-0 rounded-xl bg-gray-50 hover:bg-gray-100 shrink-0"
+                      onClick={startRecording}
+                      loading={uploadingAudio}
+                    >
+                      <Mic className="w-5 h-5 text-gray-500" />
+                    </Button>
+                  )}
+                </>
               )}
             </form>
             <p className="text-[10px] text-center text-gray-400 mt-2 flex items-center justify-center gap-1">
@@ -1150,9 +1270,24 @@ export default function ChatPage() {
           </div>
         )}
 
-        <audio ref={audioPlayerRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
         <audio ref={remoteAudioRef} autoPlay controls className="w-full mt-2 hidden" />
         <audio ref={localAudioRef} autoPlay muted className="hidden" />
+
+        {lightboxImage && (
+          <div className="fixed inset-0 z-[95] bg-black/80 p-4 flex items-center justify-center" onClick={() => setLightboxImage(null)}>
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center"
+              aria-label={t('call.close')}
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="relative w-full max-w-4xl aspect-[4/3]" onClick={(event) => event.stopPropagation()}>
+              <Image src={lightboxImage} alt="Chat image preview" fill className="object-contain" unoptimized sizes="100vw" />
+            </div>
+          </div>
+        )}
 
         {showCallPanel && activeCall && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">

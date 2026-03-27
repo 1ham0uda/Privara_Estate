@@ -113,19 +113,19 @@ export default function CaseDetails() {
   const currentStageIndex = stages.indexOf(consultation.stage);
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <Toaster />
       
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <button onClick={() => router.back()} className="flex items-center text-gray-500 hover:text-black transition-colors">
+      <main className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+          <button onClick={() => router.back()} className="inline-flex items-center text-sm text-gray-500 hover:text-black transition-colors">
             <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} /> {t('client.case.back')}
           </button>
           
           <div className="relative">
             <button onClick={() => setShowOptions(!showOptions)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-              <MoreVertical className="w-5 h-5" />
+              <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             {showOptions && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 z-10 py-2">
@@ -154,49 +154,61 @@ export default function CaseDetails() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             {/* Header Card */}
-            <Card className="p-8 border-none shadow-sm" hover={false}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+            <Card className="p-4 sm:p-6 border-none shadow-sm" hover={false}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6 mb-5 sm:mb-6">
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
                     <Badge variant="info" className="uppercase tracking-wider">
                       {consultation.status.replace('_', ' ')}
                     </Badge>
                     <span className="text-sm text-gray-400">Case #{consultation.id.slice(-6)}</span>
                   </div>
-                  <h1 className="text-3xl font-bold text-gray-900">{t('client.case.title')}</h1>
-                  <p className="text-gray-500">{t('consultant.started_on')} {formatDate(consultation.createdAt, language)}</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">{t('client.case.title')}</h1>
+                  <p className="text-sm sm:text-base text-gray-500">{t('consultant.started_on')} {formatDate(consultation.createdAt, language)}</p>
                 </div>
                 <Link href={`/cases/${caseId}/chat`}>
-                  <Button className="h-12 rounded-xl px-8">
+                  <Button className="h-10 sm:h-12 rounded-xl px-4 sm:px-6 w-full sm:w-auto text-sm">
                     <MessageSquare className={`w-5 h-5 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('client.case.open_chat')}
                   </Button>
                 </Link>
               </div>
 
               {/* Progress Tracker */}
-              <div className="relative pt-8 pb-4">
-                <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 rounded-full" />
-                <div 
-                  className="absolute top-1/2 left-0 h-1 bg-black -translate-y-1/2 rounded-full transition-all duration-500"
-                  style={{ width: `${(currentStageIndex / (stages.length - 1)) * 100}%` }}
-                />
-                <div className="relative flex justify-between">
-                  {stages.map((s, i) => (
-                    <div key={s} className="flex flex-col items-center">
-                      <div className={`w-4 h-4 rounded-full border-4 ${
-                        i <= currentStageIndex ? 'bg-black border-black' : 'bg-white border-gray-100'
-                      } z-10`} />
-                      <span className={`text-[10px] mt-2 font-bold uppercase tracking-tighter ${
-                        i === currentStageIndex ? 'text-black' : 'text-gray-300'
-                      }`}>
-                        {s.replace('_', ' ')}
-                      </span>
+              <div className="mt-2">
+                <div className="flex items-center justify-between gap-3 mb-3 sm:hidden">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">{t('client.case.title')}</p>
+                    <p className="text-sm font-semibold text-gray-900 mt-1">{consultation.stage.replace('_', ' ')}</p>
+                  </div>
+                  <Badge variant="info" className="text-[11px] uppercase tracking-wide">{currentStageIndex + 1}/{stages.length}</Badge>
+                </div>
+
+                <div className="overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="relative min-w-[620px] pt-6 pb-4 px-1">
+                    <div className="absolute top-[1.9rem] left-2 right-2 h-1 bg-gray-100 rounded-full" />
+                    <div 
+                      className="absolute top-[1.9rem] left-2 h-1 bg-black rounded-full transition-all duration-500"
+                      style={{ width: `calc(${Math.max(currentStageIndex, 0) / (stages.length - 1) * 100}% - 8px)` }}
+                    />
+                    <div className="relative flex justify-between gap-5">
+                      {stages.map((s, i) => (
+                        <div key={s} className="flex min-w-[78px] flex-col items-center text-center">
+                          <div className={`w-4 h-4 rounded-full border-[3px] ${
+                            i <= currentStageIndex ? 'bg-black border-black' : 'bg-white border-gray-200'
+                          } z-10`} />
+                          <span className={`mt-2 text-[10px] sm:text-[11px] font-semibold uppercase leading-4 tracking-tight ${
+                            i === currentStageIndex ? 'text-black' : 'text-gray-400'
+                          }`}>
+                            {s.replace('_', ' ')}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
             </Card>
@@ -207,10 +219,10 @@ export default function CaseDetails() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <Card className="p-8 border-indigo-100 bg-indigo-50/30" hover={false}>
+                <Card className="p-4 sm:p-6 border-indigo-100 bg-indigo-50/30" hover={false}>
                   <div className="text-center max-w-md mx-auto">
-                    <Star className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('rating.title')}</h2>
+                    <Star className="w-10 h-10 sm:w-12 sm:h-12 text-indigo-600 mx-auto mb-4" />
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{t('rating.title')}</h2>
                     <p className="text-gray-600 mb-6">{t('dashboard.feedback_help')}</p>
                     
                     <div className="flex justify-center gap-2 mb-6">
@@ -220,7 +232,7 @@ export default function CaseDetails() {
                           onClick={() => setRating(star)}
                           className={`p-2 transition-transform hover:scale-110 ${rating >= star ? 'text-yellow-400' : 'text-gray-300'}`}
                         >
-                          <Star className="w-8 h-8 fill-current" />
+                          <Star className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
                         </button>
                       ))}
                     </div>
@@ -270,7 +282,7 @@ export default function CaseDetails() {
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card className="p-6 border-none shadow-sm" hover={false}>
-                  <div className="space-y-6">
+                  <div className="space-y-4 sm:space-y-6">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
                         <Target className="w-5 h-5 text-gray-400" />
@@ -301,7 +313,7 @@ export default function CaseDetails() {
                   </div>
                 </Card>
                 <Card className="p-6 border-none shadow-sm" hover={false}>
-                  <div className="space-y-6">
+                  <div className="space-y-4 sm:space-y-6">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
                         <Building2 className="w-5 h-5 text-gray-400" />
@@ -344,7 +356,7 @@ export default function CaseDetails() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-8">
+          <div className="space-y-4 sm:space-y-6">
             {/* Consultant Card */}
             <section>
               <h2 className="text-xl font-bold mb-6">Your Consultant</h2>
@@ -364,7 +376,7 @@ export default function CaseDetails() {
                         </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <User className="w-12 h-12 text-gray-300" />
+                          <User className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300" />
                         </div>
                       )}
                     </div>
@@ -381,7 +393,7 @@ export default function CaseDetails() {
                   </div>
                 </Card>
               ) : (
-                <Card className="p-8 text-center bg-gray-50 border-dashed border-2 border-gray-200" hover={false}>
+                <Card className="p-4 sm:p-6 text-center bg-gray-50 border-dashed border-2 border-gray-200" hover={false}>
                   <Clock className="w-10 h-10 text-gray-300 mx-auto mb-4" />
                   <p className="text-sm text-gray-500">{t('client.case.assignment_in_progress')}</p>
                   {consultation.intake.selectedConsultantName ? (
@@ -405,7 +417,7 @@ export default function CaseDetails() {
               {consultation.reportUrl ? (
                 <Card className="p-6 bg-emerald-50 border-emerald-100 shadow-sm" hover={false}>
                   <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
                       <FileText className="w-6 h-6 text-emerald-600" />
                     </div>
                     <div>
@@ -440,7 +452,7 @@ export default function CaseDetails() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-4 sm:p-6"
           >
             <h2 className="text-2xl font-bold mb-4">{t('client.case.reassignment_title')}</h2>
             <p className="text-gray-600 mb-6">
