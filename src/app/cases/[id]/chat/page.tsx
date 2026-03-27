@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
@@ -125,6 +125,8 @@ export default function ChatPage() {
   const recordingMetaRef = useRef<{ callId: string; consultationId: string; startedAtMs: number } | null>(null);
   const recorderStoppingRef = useRef(false);
   const finalizedCallStatusesRef = useRef<Map<string, string>>(new Map());
+  const remotePlaybackContextRef = useRef<AudioContext | null>(null);
+  const remotePlaybackSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   const { t, isRTL, language } = useLanguage();
   const isQuality = profile?.role === 'quality';
@@ -244,7 +246,38 @@ export default function ChatPage() {
     }
   };
 
-  const cleanupCallMedia = ({ preservePanel = false }: { preservePanel?: boolean } = {}) => {
+  const ensureRemotePlaybackContext = useCallback(async () => {
+    try {
+      if (!remotePlaybackContextRef.current) {
+        remotePlaybackContextRef.current = new AudioContext();
+      }
+      if (remotePlaybackContextRef.current.state === 'suspended') {
+        await remotePlaybackContextRef.current.resume();
+      }
+      return remotePlaybackContextRef.current;
+    } catch (error) {
+      console.error('[call] Failed to initialize remote playback context', error);
+      return null;
+    }
+  }, []);
+
+  const stopRemotePlayback = useCallback(() => {
+    if (remotePlaybackSourceRef.current) {
+      try {
+        remotePlaybackSourceRef.current.disconnect();
+      } catch {
+        // ignore disconnect failures
+      }
+      remotePlaybackSourceRef.current = null;
+    }
+
+    if (remotePlaybackContextRef.current) {
+      remotePlaybackContextRef.current.close().catch(() => undefined);
+      remotePlaybackContextRef.current = null;
+    }
+  }, []);
+
+  const cleanupCallMedia = useCallback(({ preservePanel = false }: { preservePanel?: boolean } = {}) => {
     clearCallTimeout();
     clearCallTimer();
 
@@ -271,10 +304,13 @@ export default function ChatPage() {
     }
 
     if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
       remoteAudioRef.current.srcObject = null;
+      remoteAudioRef.current.onloadedmetadata = null;
     }
 
     if (localAudioRef.current) {
+      localAudioRef.current.pause();
       localAudioRef.current.srcObject = null;
     }
 
@@ -283,6 +319,8 @@ export default function ChatPage() {
       mediaMixRef.current = null;
     }
 
+    stopRemotePlayback();
+
     if (!preservePanel) {
       setShowCallPanel(false);
     }
@@ -290,14 +328,14 @@ export default function ChatPage() {
     setIsMuted(false);
     setCallElapsed(0);
     resetRemoteCandidates();
-  };
+  }, [stopRemotePlayback]);
 
   useEffect(() => {
     return () => {
       cleanupCallMedia();
       stopVoiceNoteRecordingTimer();
     };
-  }, []);
+  }, [cleanupCallMedia]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -488,119 +526,7 @@ export default function ChatPage() {
     pendingCandidatesRef.current = [];
   };
 
-  const attachRemoteStream = async (event: RTCTrackEvent) => {
-    const incomingStream = event.streams?.[0] || null;
-
-    if (incomingStream) {
-      remoteStreamRef.current = incomingStream;
-    } else {
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
-      if (!remoteStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
-        remoteStreamRef.current.addTrack(event.track);
-      }
-    }
-
-    const remoteAudioEl = remoteAudioRef.current;
-    if (remoteAudioEl && remoteStreamRef.current) {
-      remoteAudioEl.autoplay = true;
-      remoteAudioEl.muted = false;
-      remoteAudioEl.volume = 1;
-      remoteAudioEl.srcObject = remoteStreamRef.current;
-
-      const playRemoteAudio = async () => {
-        try {
-          await remoteAudioEl.play();
-        } catch (error) {
-          console.error('[call] Remote audio playback failed', error);
-          toast.error(t('call.playback_failed'));
-        }
-      };
-
-      if (remoteAudioEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        await playRemoteAudio();
-      } else {
-        remoteAudioEl.onloadedmetadata = () => {
-          void playRemoteAudio();
-        };
-      }
-    }
-
-    maybeStartCallRecording();
-  };
-
-  const buildPeerConnection = async (callId: string, side: 'caller' | 'callee', localStream: MediaStream) => {
-    const peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
-    peerConnectionRef.current = peerConnection;
-
-    localStream.getAudioTracks().forEach((track) => {
-      track.enabled = true;
-      peerConnection.addTrack(track, localStream);
-    });
-
-    peerConnection.ontrack = (event) => {
-      void attachRemoteStream(event);
-    };
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        callService.addIceCandidate(callId, side, event.candidate);
-      }
-    };
-
-    peerConnection.onicecandidateerror = (event) => {
-      console.error('[call] ICE candidate error', event);
-    };
-
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log('[call] ICE state', peerConnection.iceConnectionState);
-      if (peerConnection.iceConnectionState === 'failed') {
-        toast.error(t('call.connection_failed'));
-      }
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      console.log('[call] Peer connection state', state);
-      if (state === 'failed') {
-        toast.error(t('call.connection_failed'));
-      }
-    };
-
-    await flushPendingCandidates();
-    return peerConnection;
-  };
-
-  const prepareLocalStream = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      localStreamRef.current = stream;
-      if (localAudioRef.current) {
-        localAudioRef.current.srcObject = stream;
-        localAudioRef.current.muted = true;
-        localAudioRef.current.volume = 0;
-        localAudioRef.current.play().catch(() => undefined);
-      }
-      return stream;
-    } catch {
-      toast.error(t('call.microphone_failed'));
-      throw new Error('microphone_failed');
-    }
-  };
-
-  const chooseRecordingMimeType = () => {
-    const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
-    return options.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
-  };
-
-  const maybeStartCallRecording = () => {
+  const maybeStartCallRecording = useCallback(() => {
     if (!activeCall || activeCall.status !== 'active' || !isConsultantRecorder) return;
     if (!localStreamRef.current || !remoteStreamRef.current) return;
     if (!localStreamRef.current.getAudioTracks().length || !remoteStreamRef.current.getAudioTracks().length) return;
@@ -676,6 +602,145 @@ export default function ChatPage() {
 
     recorder.start(1000);
     callService.updateCall(activeCall.id, { recordingStatus: 'recording' }).catch(() => undefined);
+  }, [activeCall, consultation, isConsultantRecorder, profile, t]);
+
+  const attachRemoteStream = async (event: RTCTrackEvent) => {
+    const incomingStream = event.streams?.[0] || null;
+
+    if (incomingStream) {
+      remoteStreamRef.current = incomingStream;
+    } else {
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      if (!remoteStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
+        remoteStreamRef.current.addTrack(event.track);
+      }
+    }
+
+    const remoteAudioEl = remoteAudioRef.current;
+    const remoteStream = remoteStreamRef.current;
+
+    if (!remoteStream) {
+      return;
+    }
+
+    try {
+      const playbackContext = await ensureRemotePlaybackContext();
+      if (playbackContext) {
+        if (remotePlaybackSourceRef.current) {
+          try {
+            remotePlaybackSourceRef.current.disconnect();
+          } catch {
+            // ignore disconnect failures
+          }
+          remotePlaybackSourceRef.current = null;
+        }
+
+        const source = playbackContext.createMediaStreamSource(remoteStream);
+        source.connect(playbackContext.destination);
+        remotePlaybackSourceRef.current = source;
+      }
+    } catch (error) {
+      console.error('[call] Remote playback setup failed', error);
+    }
+
+    if (remoteAudioEl) {
+      remoteAudioEl.autoplay = true;
+      remoteAudioEl.muted = false;
+      remoteAudioEl.volume = 1;
+      remoteAudioEl.srcObject = remoteStream;
+
+      const playRemoteAudio = async () => {
+        try {
+          await remoteAudioEl.play();
+        } catch (error) {
+          console.error('[call] Remote audio playback failed', error);
+          toast.error(t('call.playback_failed'));
+        }
+      };
+
+      if (remoteAudioEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await playRemoteAudio();
+      } else {
+        remoteAudioEl.onloadedmetadata = () => {
+          void playRemoteAudio();
+        };
+      }
+    }
+
+    maybeStartCallRecording();
+  };
+
+  const buildPeerConnection = async (callId: string, side: 'caller' | 'callee', localStream: MediaStream) => {
+    const peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
+    peerConnectionRef.current = peerConnection;
+
+    localStream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+      peerConnection.addTrack(track, localStream);
+    });
+
+    peerConnection.ontrack = (event) => {
+      void attachRemoteStream(event);
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        callService.addIceCandidate(callId, side, event.candidate);
+      }
+    };
+
+    peerConnection.onicecandidateerror = (event) => {
+      console.error('[call] ICE candidate error', event);
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('[call] ICE state', peerConnection.iceConnectionState);
+      if (peerConnection.iceConnectionState === 'failed') {
+        toast.error(t('call.connection_failed'));
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      console.log('[call] Peer connection state', state);
+      if (state === 'failed') {
+        toast.error(t('call.connection_failed'));
+      }
+    };
+
+    await flushPendingCandidates();
+    return peerConnection;
+  };
+
+  const prepareLocalStream = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      localStreamRef.current = stream;
+      await ensureRemotePlaybackContext();
+      if (localAudioRef.current) {
+        localAudioRef.current.srcObject = stream;
+        localAudioRef.current.muted = true;
+        localAudioRef.current.volume = 0;
+        localAudioRef.current.play().catch(() => undefined);
+      }
+      return stream;
+    } catch {
+      toast.error(t('call.microphone_failed'));
+      throw new Error('microphone_failed');
+    }
+  };
+
+  const chooseRecordingMimeType = () => {
+    const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+    return options.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
   };
 
   const handleStartCall = async () => {
@@ -831,7 +896,7 @@ export default function ChatPage() {
       }
       cleanupCallMedia({ preservePanel: true });
     }
-  }, [activeCall, profile, canOpenCall, isCallInitiator, t]);
+  }, [activeCall, canOpenCall, cleanupCallMedia, isCallInitiator, maybeStartCallRecording, profile, t]);
 
   useEffect(() => {
     if (!activeCall?.id || !canOpenCall) return;
@@ -1086,8 +1151,8 @@ export default function ChatPage() {
         )}
 
         <audio ref={audioPlayerRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
-        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
-        <audio ref={localAudioRef} autoPlay playsInline muted className="hidden" />
+        <audio ref={remoteAudioRef} autoPlay controls className="w-full mt-2 hidden" />
+        <audio ref={localAudioRef} autoPlay muted className="hidden" />
 
         {showCallPanel && activeCall && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
