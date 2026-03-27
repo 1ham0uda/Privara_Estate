@@ -55,9 +55,14 @@ export default function ConsultantDashboard() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
           <p className="text-gray-500 mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
-          <Button variant="outline" className="w-full" onClick={() => window.location.href = 'mailto:support@example.com'}>
-            {t('consultant.message_admin')}
-          </Button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Button variant="outline" className="w-full" onClick={() => setIsSupportModalOpen(true)}>
+              {t('support.new_message')}
+            </Button>
+            <Button variant="outline" className="w-full" as={Link} href="/consultant/support">
+              {t('support.open_tickets')}
+            </Button>
+          </div>
         </Card>
       </div>
     );
@@ -249,13 +254,18 @@ export default function ConsultantDashboard() {
               <p className="text-sm text-gray-500 mb-6">
                 {t('consultant.support_text')}
               </p>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setIsSupportModalOpen(true)}
-              >
-                {t('consultant.message_admin')}
-              </Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => setIsSupportModalOpen(true)}
+                >
+                  {t('support.new_message')}
+                </Button>
+                <Button variant="outline" className="w-full" as={Link} href="/consultant/support">
+                  {t('support.open_tickets')}
+                </Button>
+              </div>
             </Card>
           </div>
         </div>

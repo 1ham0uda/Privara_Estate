@@ -850,6 +850,9 @@ const translations: Record<Language, Record<string, string>> = {
     'support.from': 'From',
     'support.type_reply': 'Type your reply...',
     'support.send_reply': 'Send Reply',
+    'support.new_message': 'Send New Message',
+    'support.open_tickets': 'Open My Tickets',
+    'support.open_tickets_hint': 'Open your existing support conversations without creating a new ticket.',
   },
   ar: {
     'nav.home': 'الرئيسية',
@@ -1669,6 +1672,9 @@ const translations: Record<Language, Record<string, string>> = {
     'support.from': 'من',
     'support.type_reply': 'اكتب ردك هنا...',
     'support.send_reply': 'إرسال الرد',
+    'support.new_message': 'إرسال رسالة جديدة',
+    'support.open_tickets': 'فتح تذاكري',
+    'support.open_tickets_hint': 'افتح محادثات الدعم السابقة بدون إنشاء تذكرة جديدة.',
   }
 };
 

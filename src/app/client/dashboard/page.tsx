@@ -310,13 +310,18 @@ export default function ClientDashboard() {
               <p className="text-sm text-gray-500 mb-6">
                 {t('client.need_help_text')}
               </p>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setIsSupportModalOpen(true)}
-              >
-                {t('client.contact_support')}
-              </Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => setIsSupportModalOpen(true)}
+                >
+                  {t('support.new_message')}
+                </Button>
+                <Button variant="outline" className="w-full" as={Link} href="/client/support">
+                  {t('support.open_tickets')}
+                </Button>
+              </div>
             </Card>
           </div>
         </div>

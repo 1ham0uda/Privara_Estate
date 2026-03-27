@@ -6,7 +6,7 @@ import { Card, Button } from '@/src/components/UI';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { supportService } from '@/src/lib/db';
 import { toast } from 'react-hot-toast';
-import { X, Send, MessageSquare } from 'lucide-react';
+import { X, Send, MessageSquare, Inbox } from 'lucide-react';
 import { UserRole } from '@/src/types';
 
 interface SupportModalProps {
@@ -84,6 +84,25 @@ export default function SupportModal({ isOpen, onClose, userId, userName, userEm
           {t('support.description')}
         </p>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 rounded-xl"
+            onClick={() => {
+              onClose();
+              router.push(getSupportPath(userRole));
+            }}
+          >
+            <Inbox className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+            {t('support.open_tickets')}
+          </Button>
+
+          <div className="h-11 rounded-xl border border-dashed border-gray-200 text-xs text-gray-500 flex items-center justify-center px-4">
+            {t('support.open_tickets_hint')}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -105,7 +124,7 @@ export default function SupportModal({ isOpen, onClose, userId, userName, userEm
             disabled={!message.trim()}
           >
             <Send className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
-            {t('common.send')}
+            {t('support.new_message')}
           </Button>
         </form>
       </Card>
