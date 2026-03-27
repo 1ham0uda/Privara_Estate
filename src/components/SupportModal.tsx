@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Card, Button, Input } from '@/src/components/UI';
+import { useRouter } from 'next/navigation';
+import { Card, Button } from '@/src/components/UI';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { supportService } from '@/src/lib/db';
 import { toast } from 'react-hot-toast';
@@ -17,7 +18,20 @@ interface SupportModalProps {
   userRole: UserRole;
 }
 
+const getSupportPath = (role: UserRole, ticketId?: string | null) => {
+  const basePath = role === 'client'
+    ? '/client/support'
+    : role === 'consultant'
+      ? '/consultant/support'
+      : role === 'quality'
+        ? '/quality/support'
+        : '/admin/support';
+
+  return ticketId ? `${basePath}?ticketId=${ticketId}` : basePath;
+};
+
 export default function SupportModal({ isOpen, onClose, userId, userName, userEmail, userRole }: SupportModalProps) {
+  const router = useRouter();
   const { t, isRTL } = useLanguage();
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -30,7 +44,7 @@ export default function SupportModal({ isOpen, onClose, userId, userName, userEm
 
     setSending(true);
     try {
-      await supportService.sendSupportMessage(
+      const ticketId = await supportService.sendSupportMessage(
         userId,
         userName,
         userEmail,
@@ -40,6 +54,7 @@ export default function SupportModal({ isOpen, onClose, userId, userName, userEm
       toast.success(t('support.message_sent'));
       setMessage('');
       onClose();
+      router.push(getSupportPath(userRole, ticketId));
     } catch (error) {
       console.error('Error sending support message:', error);
       toast.error(t('common.error'));
