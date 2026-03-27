@@ -516,8 +516,35 @@ service cloud.firestore {
 
     match /supportMessages/{messageId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && isValidSupportMessage(request.resource.data);
-      allow update: if isValidSupportMessage(request.resource.data) && areImmutableFieldsUnchanged(['userId', 'userEmail', 'userRole', 'createdAt']) && ((isAdmin()) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId && request.resource.data.text == resource.data.text && request.resource.data.status == resource.data.status && request.resource.data.userName == resource.data.userName));
+      allow create: if isAuthenticated() &&
+        isValidSupportMessage(request.resource.data) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.replies.size() == 0 &&
+        !('closedAt' in request.resource.data) &&
+        !('closedById' in request.resource.data) &&
+        !('closedByName' in request.resource.data);
+      allow update: if isValidSupportMessage(request.resource.data) &&
+        areImmutableFieldsUnchanged(['userId', 'userEmail', 'userRole', 'createdAt', 'text']) &&
+        (
+          (
+            isAdmin() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies', 'status', 'updatedAt', 'closedAt', 'closedById', 'closedByName'])
+          ) ||
+          (
+            isAuthenticated() &&
+            resource.data.userId == request.auth.uid &&
+            request.resource.data.userId == resource.data.userId &&
+            request.resource.data.userName == resource.data.userName &&
+            request.resource.data.userEmail == resource.data.userEmail &&
+            request.resource.data.userRole == resource.data.userRole &&
+            request.resource.data.status == resource.data.status &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies', 'updatedAt']) &&
+            !('closedAt' in request.resource.data) &&
+            !('closedById' in request.resource.data) &&
+            !('closedByName' in request.resource.data)
+          )
+        );
     }
 
     match /calls/{callId} {

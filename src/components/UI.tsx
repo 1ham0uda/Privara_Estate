@@ -16,7 +16,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(({ children, cla
       ref={ref}
       whileHover={hover ? { y: -4, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' } : {}}
       className={cn(
-        "bg-white rounded-2xl border border-gray-100 p-6 transition-all duration-200",
+        "bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 transition-all duration-200",
         className
       )}
     >
@@ -71,7 +71,7 @@ export function Button({
   return (
     <Component
       className={cn(
-        "inline-flex items-center justify-center px-6 py-2.5 rounded-xl font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed",
         variants[variant as keyof typeof variants],
         className
       )}
@@ -90,7 +90,7 @@ export function Input({ className, ...props }: any) {
   return (
     <input
       className={cn(
-        "w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all text-sm",
+        "w-full px-3.5 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all text-sm",
         className
       )}
       {...props}

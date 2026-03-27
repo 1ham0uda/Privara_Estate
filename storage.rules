@@ -42,7 +42,7 @@ service firebase.storage {
       allow write: if isAuthenticated() && (
         isAdmin() ||
         (firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
-      ) && request.resource.size < 250 * 1024 * 1024 && request.resource.contentType.matches('video/.*');
+      ) && request.resource.size < 250 * 1024 * 1024 && (request.resource.contentType.matches('video/.*') || request.resource.contentType.matches('audio/.*'));
     }
     
 

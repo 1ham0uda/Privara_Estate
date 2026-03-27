@@ -95,14 +95,14 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-8 sm:py-12 sm:px-6 lg:px-8" dir={isRTL ? 'rtl' : 'ltr'}>
       <Toaster position="top-center" />
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <Link href="/" className="flex justify-center items-center gap-2 mb-6">
           <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
             <Shield className="text-white w-6 h-6" />
           </div>
-          <span className="text-2xl font-bold tracking-tight">Privately</span>
+          <span className="text-2xl font-bold tracking-tight">Privara Estate</span>
         </Link>
         <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
           {t('auth.register_title')}

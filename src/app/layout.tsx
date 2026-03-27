@@ -4,8 +4,8 @@ import { AuthProvider } from '@/src/context/AuthContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
 
 export const metadata: Metadata = {
-  title: 'Privately | Privacy-First Real Estate Consultation',
-  description: 'Expert real estate advice without the spam calls. Professional, private, and unbiased.',
+  title: 'Privara Estate | Private Real Estate Consultation',
+  description: 'Private real estate consultations, secure in-app communication, and guided case management with Privara Estate.',
 };
 
 export default function RootLayout({
@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
-      <body className="font-sans" suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <LanguageProvider>
           <AuthProvider>
             {children}

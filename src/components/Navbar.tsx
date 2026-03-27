@@ -32,18 +32,18 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
   return (
     <nav className="bg-white border-b border-gray-100 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className={`flex justify-between h-16 ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex justify-between h-14 sm:h-16 ${isRTL ? 'flex-row-reverse' : ''}`}>
           <div className="flex items-center">
             <Link href="/" className={`flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-2`}>
-              <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-black rounded-lg flex items-center justify-center">
                 <Shield className="text-white w-5 h-5" />
               </div>
-              <span className="text-xl font-bold tracking-tight">Privately</span>
+              <span className="text-lg sm:text-xl font-bold tracking-tight">Privara Estate</span>
             </Link>
           </div>
 
           {/* Desktop Nav */}
-          <div className={`hidden md:flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-8`}>
+          <div className={`hidden md:flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-6`}>
             <Link href="/#how-it-works" className="text-sm font-medium text-gray-600 hover:text-black transition-colors">{t('hero.how_it_works')}</Link>
             
             {!forceLanguage && (
@@ -85,7 +85,7 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
                 <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-black transition-colors">{t('nav.login')}</Link>
                 <Link 
                   href="/register" 
-                  className="text-sm font-medium text-white bg-black px-6 py-2 rounded-full hover:bg-gray-800 transition-all shadow-lg shadow-black/10"
+                  className="text-sm font-medium text-white bg-black px-4 sm:px-6 py-2 rounded-full hover:bg-gray-800 transition-all shadow-lg shadow-black/10"
                 >
                   {t('nav.register')}
                 </Link>
