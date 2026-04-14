@@ -1,28 +1,62 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
+import { useAuth } from '@/src/context/AuthContext';
 import { Button, Card } from '@/src/components/UI';
-import { consultationService, settingsService } from '@/src/lib/db';
+import { settingsService } from '@/src/lib/db';
 import { IntakeData } from '@/src/types';
-import { Shield, CreditCard, Lock, CheckCircle2, ArrowLeft, UserCheck, ExternalLink } from 'lucide-react';
+import {
+  Shield,
+  CreditCard,
+  Lock,
+  CheckCircle2,
+  ArrowLeft,
+  UserCheck,
+  ExternalLink,
+} from 'lucide-react';
 import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
 import { useLanguage } from '@/src/context/LanguageContext';
 
+declare global {
+  interface Window {
+    GeideaCheckout?: new (
+      onSuccess: (data: any) => void,
+      onError: (data: any) => void,
+      onCancel: (data: any) => void,
+    ) => {
+      startPayment: (sessionId: string, paymentOptions?: unknown, containerId?: string) => void;
+    };
+  }
+}
+
+const CHECKOUT_SCRIPT_URL =
+  process.env.NEXT_PUBLIC_GEIDEA_CHECKOUT_SCRIPT_URL ||
+  'https://www.merchant.geidea.net/hpp/geideaCheckout.min.js';
+
 export default function PaymentPage() {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { profile, loading } = useRoleGuard(['client']);
+  const { user } = useAuth();
   const router = useRouter();
   const [intakeData, setIntakeData] = useState<IntakeData | null>(null);
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [consultationFee, setConsultationFee] = useState(500);
+  const [gatewayReady, setGatewayReady] = useState(false);
+  const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
 
   useEffect(() => {
-    const data = localStorage.getItem('pending_intake');
+    const savedCaseId = sessionStorage.getItem('pending_case_id');
+    if (savedCaseId) {
+      setPendingCaseId(savedCaseId);
+    }
+
+    const data = sessionStorage.getItem('pending_intake');
     if (!data) {
       router.push('/client/new-consultation');
       return;
@@ -30,8 +64,12 @@ export default function PaymentPage() {
 
     try {
       const parsed = JSON.parse(data) as IntakeData;
-      if ((parsed.selectedConsultantUid && !parsed.selectedConsultantName) || (!parsed.selectedConsultantUid && parsed.selectedConsultantName)) {
-        localStorage.removeItem('pending_intake');
+      if (
+        (parsed.selectedConsultantUid && !parsed.selectedConsultantName) ||
+        (!parsed.selectedConsultantUid && parsed.selectedConsultantName)
+      ) {
+        sessionStorage.removeItem('pending_intake');
+        sessionStorage.removeItem('pending_case_id');
         toast.error(t('payment.load_error'));
         router.push('/client/new-consultation');
         return;
@@ -39,7 +77,8 @@ export default function PaymentPage() {
       setIntakeData(parsed);
     } catch (error) {
       console.error('Failed to parse intake data:', error);
-      localStorage.removeItem('pending_intake');
+      sessionStorage.removeItem('pending_intake');
+      sessionStorage.removeItem('pending_case_id');
       toast.error(t('payment.load_error'));
       router.push('/client/new-consultation');
       return;
@@ -55,39 +94,99 @@ export default function PaymentPage() {
     void fetchSettings();
   }, [router, t]);
 
-  const handlePayment = async () => {
-    if (!intakeData) return;
+  const hasSelectedConsultant = useMemo(
+    () => Boolean(intakeData?.selectedConsultantUid && intakeData?.selectedConsultantName),
+    [intakeData],
+  );
 
-    setProcessing(true);
-    try {
-      const caseId = await consultationService.createConsultation(
-        profile!.uid,
-        profile!.displayName || profile!.email || 'Client',
-        profile!.avatarUrl || undefined,
-        intakeData
-      );
+  const launchCheckout = (sessionId: string, caseId: string) => {
+    if (!window.GeideaCheckout) {
+      throw new Error(t('payment.gateway_error'));
+    }
 
-      if (!caseId) throw new Error('consultation_create_failed');
-
-      localStorage.removeItem('pending_intake');
+    const onSuccess = () => {
+      sessionStorage.removeItem('pending_intake');
+      sessionStorage.removeItem('pending_case_id');
+      setPendingCaseId(null);
       setSuccess(true);
       toast.success(t('payment.success_title'));
       setTimeout(() => {
         router.push(`/client/cases/${caseId}`);
-      }, 2000);
-    } catch (error) {
+      }, 1200);
+    };
+
+    const onError = () => {
       toast.error(t('payment.error_failed'));
+    };
+
+    const onCancel = () => {
+      toast.error(t('payment.cancelled'));
+    };
+
+    const payment = new window.GeideaCheckout(onSuccess, onError, onCancel);
+    payment.startPayment(sessionId);
+  };
+
+  const handlePayment = async () => {
+    if (!intakeData || !user) return;
+    if (!gatewayReady) {
+      toast.error(t('payment.gateway_loading'));
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/payments/geidea/initiate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          intake: pendingCaseId ? undefined : intakeData,
+          caseId: pendingCaseId ?? undefined,
+          language,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (data?.caseId && typeof data.caseId === 'string') {
+        sessionStorage.setItem('pending_case_id', data.caseId);
+        setPendingCaseId(data.caseId);
+      }
+
+      if (!response.ok) {
+        if (data?.error === 'This consultation is already paid' && data?.caseId) {
+          sessionStorage.removeItem('pending_intake');
+          sessionStorage.removeItem('pending_case_id');
+          router.push(`/client/cases/${data.caseId}`);
+          return;
+        }
+        throw new Error(data?.error || t('payment.error_failed'));
+      }
+
+      launchCheckout(data.sessionId, data.caseId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('payment.error_failed'));
     } finally {
       setProcessing(false);
     }
   };
 
-  if (loading || !intakeData) return null;
-
-  const hasSelectedConsultant = Boolean(intakeData.selectedConsultantUid && intakeData.selectedConsultantName);
+  if (loading || !profile || !intakeData) return null;
 
   return (
     <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+      <Script
+        src={CHECKOUT_SCRIPT_URL}
+        strategy="afterInteractive"
+        onLoad={() => setGatewayReady(true)}
+        onError={() => {
+          setGatewayReady(false);
+          toast.error(t('payment.gateway_error'));
+        }}
+      />
       <Navbar />
       <Toaster />
 
@@ -98,10 +197,13 @@ export default function PaymentPage() {
               onClick={() => router.back()}
               className="flex items-center text-gray-500 hover:text-black mb-8 transition-colors"
             >
-              <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} /> {t('payment.back_to_intake')}
+              <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} />{' '}
+              {t('payment.back_to_intake')}
             </button>
 
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">{t('payment.title')}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">
+              {t('payment.title')}
+            </h1>
 
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <div className="space-y-6">
@@ -118,13 +220,19 @@ export default function PaymentPage() {
                       </div>
                       <div>
                         <p className="text-xs font-bold text-gray-400 uppercase mb-1">
-                          {hasSelectedConsultant ? t('intake.selected_consultant_label') : t('payment.assignment_title')}
+                          {hasSelectedConsultant
+                            ? t('intake.selected_consultant_label')
+                            : t('payment.assignment_title')}
                         </p>
                         <p className="font-bold text-gray-900">
-                          {hasSelectedConsultant ? intakeData.selectedConsultantName : t('payment.assign_later_title')}
+                          {hasSelectedConsultant
+                            ? intakeData.selectedConsultantName
+                            : t('payment.assign_later_title')}
                         </p>
                         <p className="text-sm text-gray-500 mt-1">
-                          {hasSelectedConsultant ? t('payment.selected_consultant_helper') : t('payment.assign_later_desc')}
+                          {hasSelectedConsultant
+                            ? t('payment.selected_consultant_helper')
+                            : t('payment.assign_later_desc')}
                         </p>
                       </div>
                     </div>
@@ -143,7 +251,9 @@ export default function PaymentPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">{t('intake.goal_label')}</span>
-                    <span className="font-medium capitalize">{t(`intake.goal_${intakeData.goal}`)}</span>
+                    <span className="font-medium capitalize">
+                      {t(`intake.goal_${intakeData.goal}`)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">{t('intake.area_label')}</span>
@@ -168,9 +278,7 @@ export default function PaymentPage() {
 
             <div className="mt-8 flex items-start gap-3 p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-100">
               <Shield className="w-5 h-5 mt-0.5" />
-              <p className="text-sm">
-                {t('payment.secure_msg')}
-              </p>
+              <p className="text-sm">{t('payment.secure_msg')}</p>
             </div>
           </div>
 
@@ -192,10 +300,10 @@ export default function PaymentPage() {
 
                 <div className="space-y-6">
                   <div className="p-4 bg-gray-50 rounded-xl border-2 border-gray-100">
-                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">{t('payment.simulated_title')}</p>
-                    <p className="text-sm text-gray-600">
-                      {t('payment.simulated_desc')}
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">
+                      {t('payment.simulated_title')}
                     </p>
+                    <p className="text-sm text-gray-600">{t('payment.simulated_desc')}</p>
                   </div>
 
                   <div className="space-y-4">
@@ -206,8 +314,14 @@ export default function PaymentPage() {
                       onClick={handlePayment}
                       className="w-full h-14 text-lg rounded-2xl"
                       loading={processing}
+                      disabled={!gatewayReady || processing}
                     >
-                      {t('payment.confirm_and_pay').replace('{amount}', consultationFee.toLocaleString())}
+                      {gatewayReady
+                        ? t('payment.confirm_and_pay').replace(
+                            '{amount}',
+                            consultationFee.toLocaleString(),
+                          )
+                        : t('payment.gateway_loading')}
                     </Button>
                   </div>
                 </div>

@@ -1,8 +1,10 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -116,9 +118,27 @@ export const callService = {
         ...updates,
         updatedAt: serverTimestamp(),
       });
+      const terminalStatuses: Array<CallSession['status']> = ['ended', 'declined', 'missed'];
+      if (updates.status && terminalStatuses.includes(updates.status)) {
+        void this.cleanupIceCandidates(callId);
+      }
     } catch (error) {
       logCallError('updateCall', error);
       throw error;
+    }
+  },
+
+  async cleanupIceCandidates(callId: string): Promise<void> {
+    try {
+      const subcollections = ['callerCandidates', 'calleeCandidates'] as const;
+      await Promise.all(
+        subcollections.map(async (sub) => {
+          const snapshot = await getDocs(collection(db, 'calls', callId, sub));
+          await Promise.all(snapshot.docs.map((d) => deleteDoc(d.ref)));
+        })
+      );
+    } catch (error) {
+      logCallError('cleanupIceCandidates', error);
     }
   },
 
@@ -175,7 +195,8 @@ export const callService = {
 
   async uploadRecording(consultationId: string, callId: string, file: File, durationSec: number) {
     try {
-      const storageRef = ref(storage, `calls/${consultationId}/${callId}/${Date.now()}_${file.name}`);
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `calls/${consultationId}/${callId}/${crypto.randomUUID()}${ext}`);
       const snapshot = await uploadBytes(storageRef, file);
       const recordingUrl = await getDownloadURL(snapshot.ref);
       await this.updateCall(callId, {

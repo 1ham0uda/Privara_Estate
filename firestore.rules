@@ -11,7 +11,7 @@ service cloud.firestore {
     //   - uid: string (required)
     //   - email: string (required, email format)
     //   - displayName: string (required)
-    //   - role: string (required, enum: ['client', 'consultant', 'admin'])
+    //   - role: string (required, enum: ['client', 'consultant', 'admin', 'quality'])
     //   - createdAt: timestamp (required)
     //   - avatarUrl: string (optional)
     //
@@ -50,7 +50,7 @@ service cloud.firestore {
     //   - caseId: string (required)
     //   - senderId: string (required)
     //   - senderName: string (required)
-    //   - senderRole: string (required, enum: ['client', 'consultant', 'admin'])
+    //   - senderRole: string (required, enum: ['client', 'consultant', 'admin', 'quality'])
     //   - text: string (required)
     //   - imageUrl: string (optional)
     //   - type: string (optional, enum: ['text', 'meeting_request', 'meeting_link', 'call_log'])
@@ -122,7 +122,7 @@ service cloud.firestore {
     }
 
     function isValidUrl(url) {
-      return url is string && url.size() < 2000 && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^/.*"));
+      return url is string && url.size() < 2000 && (url.matches("^https://.*") || url.matches("^http://.*"));
     }
 
     function areImmutableFieldsUnchanged(fields) {

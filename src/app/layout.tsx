@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/src/context/AuthContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
+import ErrorBoundary from '@/src/components/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'Privara Estate | Private Real Estate Consultation',
@@ -16,11 +17,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
-        <LanguageProvider>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </LanguageProvider>
+        <ErrorBoundary>
+          <LanguageProvider>
+            <AuthProvider>
+              {children}
+            </AuthProvider>
+          </LanguageProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

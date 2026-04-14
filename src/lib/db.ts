@@ -4,18 +4,20 @@ import {
   setDoc,
   getDoc,
   updateDoc,
+  deleteDoc,
   addDoc,
   query,
   where,
   orderBy,
   onSnapshot,
   serverTimestamp,
+  Timestamp,
   getDocs,
   limit
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
-import { UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile, QualityAuditReport, UserRole, AppNotification, NotificationEventType } from '../types';
+import { UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile, QualityAuditReport, UserRole, AppNotification, NotificationEventType, SystemSettings } from '../types';
 
 enum OperationType {
   CREATE = 'create',
@@ -41,46 +43,14 @@ interface NotificationPayload {
   messageParams?: Record<string, string>;
 }
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+// Typed `never` so TypeScript knows every call site diverges — eliminates
+// unreachable `return null/[]` dead code after each invocation.
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  // Log only the error code/message and operation context — no auth PII.
+  const code = (error as { code?: string })?.code ?? 'unknown';
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[db] Firestore error op=${operationType} path=${path ?? '(none)'} code=${code}: ${message}`);
+  throw new Error(`Firestore ${operationType} failed on "${path ?? '(none)'}": [${code}] ${message}`);
 }
 
 export const userService = {
@@ -92,7 +62,6 @@ export const userService = {
       return docSnap.exists() ? (docSnap.data() as UserProfile) : null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
-      return null;
     }
   },
 
@@ -105,7 +74,6 @@ export const userService = {
       return { uid: snapshot.docs[0].id, ...snapshot.docs[0].data() } as UserProfile;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
-      return null;
     }
   },
 
@@ -139,7 +107,6 @@ export const userService = {
       return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -151,7 +118,6 @@ export const userService = {
       return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 };
@@ -236,7 +202,6 @@ export const consultationService = {
       return newDoc.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
-      return '';
     }
   },
 
@@ -431,7 +396,6 @@ export const consultationService = {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -443,7 +407,6 @@ export const consultationService = {
       return docSnap.exists() ? ({ id: docSnap.id, ...docSnap.data() } as ConsultationCase) : null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
-      return null;
     }
   },
 
@@ -463,7 +426,8 @@ export const consultationService = {
   async uploadReport(id: string, file: File): Promise<string> {
     const path = `consultations/${id}/report`;
     try {
-      const storageRef = ref(storage, `reports/${id}/${file.name}`);
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `reports/${id}/${crypto.randomUUID()}${ext}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
 
@@ -475,14 +439,14 @@ export const consultationService = {
       return downloadURL;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
-      return '';
     }
   },
 
   async uploadMeetingRecording(id: string, file: File): Promise<string> {
     const path = `consultations/${id}/meeting`;
     try {
-      const storageRef = ref(storage, `meetings/${id}/${file.name}`);
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `meetings/${id}/${crypto.randomUUID()}${ext}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
 
@@ -493,7 +457,6 @@ export const consultationService = {
       return downloadURL;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
-      return '';
     }
   },
 
@@ -514,13 +477,13 @@ export const consultationService = {
     const path = 'consultations';
     let q;
     if (role === 'admin') {
-      q = query(collection(db, 'consultations'), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'consultations'), orderBy('createdAt', 'desc'), limit(50));
     } else if (role === 'consultant') {
-      q = query(collection(db, 'consultations'), where('consultantId', '==', uid), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'consultations'), where('consultantId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
     } else if (role === 'quality') {
-      q = query(collection(db, 'consultations'), where('qualitySpecialistId', '==', uid), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'consultations'), where('qualitySpecialistId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
     } else {
-      q = query(collection(db, 'consultations'), where('clientId', '==', uid), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'consultations'), where('clientId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
     }
 
     return onSnapshot(q, (snapshot) => {
@@ -582,24 +545,24 @@ export const chatService = {
   async uploadChatAudio(caseId: string, file: File): Promise<string> {
     const path = `messages/${caseId}/audio`;
     try {
-      const storageRef = ref(storage, `chat/${caseId}/${Date.now()}_${file.name}`);
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `chat/${caseId}/${crypto.randomUUID()}${ext}`);
       const snapshot = await uploadBytes(storageRef, file);
       return await getDownloadURL(snapshot.ref);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
-      return '';
     }
   },
 
   async uploadChatImage(caseId: string, file: File): Promise<string> {
     const path = `messages/${caseId}/image`;
     try {
-      const storageRef = ref(storage, `chat/${caseId}/${Date.now()}_${file.name}`);
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `chat/${caseId}/${crypto.randomUUID()}${ext}`);
       const snapshot = await uploadBytes(storageRef, file);
       return await getDownloadURL(snapshot.ref);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
-      return '';
     }
   },
 
@@ -608,7 +571,8 @@ export const chatService = {
     const q = query(
       collection(db, 'messages'),
       where('caseId', '==', caseId),
-      orderBy('createdAt', 'asc')
+      orderBy('createdAt', 'asc'),
+      limit(100)
     );
 
     return onSnapshot(q, (snapshot) => {
@@ -704,7 +668,6 @@ export const qualityService = {
       return newDoc.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
-      return '';
     }
   },
 
@@ -716,7 +679,6 @@ export const qualityService = {
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QualityAuditReport));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -728,7 +690,6 @@ export const qualityService = {
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QualityAuditReport));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -740,7 +701,6 @@ export const qualityService = {
       return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -764,7 +724,6 @@ export const consultantService = {
       return docSnap.exists() ? ({ uid: docSnap.id, ...docSnap.data() } as ConsultantProfile) : null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
-      return null;
     }
   },
 
@@ -776,7 +735,6 @@ export const consultantService = {
       return snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as ConsultantProfile));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
-      return [];
     }
   },
 
@@ -843,7 +801,6 @@ export const supportService = {
       return newDoc.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
-      return '';
     }
   },
 
@@ -873,7 +830,7 @@ export const supportService = {
         senderName,
         senderRole,
         text: trimmedText,
-        createdAt: new Date(),
+        createdAt: Timestamp.fromDate(new Date()),
       });
 
       await updateDoc(docRef, {
@@ -981,23 +938,22 @@ export const supportService = {
 };
 
 export const settingsService = {
-  async getSettings(): Promise<any> {
+  async getSettings(): Promise<SystemSettings> {
     const path = 'settings/system';
     try {
       const docRef = doc(db, 'settings', 'system');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        return docSnap.data();
+        return docSnap.data() as SystemSettings;
       }
 
       return { consultationFee: 500 };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
-      return { consultationFee: 500 };
     }
   },
 
-  async updateSettings(updates: any): Promise<void> {
+  async updateSettings(updates: Partial<SystemSettings>): Promise<void> {
     const path = 'settings/system';
     try {
       const docRef = doc(db, 'settings', 'system');

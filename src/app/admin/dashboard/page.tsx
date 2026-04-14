@@ -30,10 +30,8 @@ import { toast, Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 import Image from 'next/image';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/src/lib/firebase';
 import { useLanguage } from '@/src/context/LanguageContext';
-import { supportService, settingsService } from '@/src/lib/db';
+import { settingsService } from '@/src/lib/db';
 import AdminSupportWorkspace from '@/src/components/support/AdminSupportWorkspace';
 
 export default function AdminDashboard() {
@@ -71,11 +69,10 @@ export default function AdminDashboard() {
 
       
       consultantService.getAllConsultants().then(setConsultants);
-      
+
       const fetchQuality = async () => {
-        const q = query(collection(db, 'users'), where('role', '==', 'quality'));
-        const snapshot = await getDocs(q);
-        setQualitySpecialists(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));
+        const specialists = await qualityService.getAllQualitySpecialists();
+        setQualitySpecialists(specialists);
       };
 
       const fetchSettings = async () => {
@@ -106,22 +103,30 @@ export default function AdminDashboard() {
     setUpdatingStatus(true);
     try {
       const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
-      await updateDoc(doc(db, 'users', uid), { status: newStatus });
+
+      // Update the user record via the service layer
+      await userService.updateUserProfile(uid, { status: newStatus });
+
+      // Keep consultantProfiles in sync so the intake form reflects the change
+      const isConsultant = consultants.some(c => c.uid === uid);
+      if (isConsultant) {
+        await consultantService.updateConsultantProfile(uid, { status: newStatus });
+      }
+
       toast.success(t('common.success'));
-      
-      // Refresh lists
-      const updatedConsultants = await consultantService.getAllConsultants();
+
+      // Refresh lists via service layer (no raw Firestore SDK)
+      const [updatedConsultants, updatedSpecialists] = await Promise.all([
+        consultantService.getAllConsultants(),
+        qualityService.getAllQualitySpecialists(),
+      ]);
       setConsultants(updatedConsultants);
-      
-      const q = query(collection(db, 'users'), where('role', '==', 'quality'));
-      const snapshot = await getDocs(q);
-      setQualitySpecialists(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));
-      
+      setQualitySpecialists(updatedSpecialists);
+
       if (selectedStaff && selectedStaff.uid === uid) {
         setSelectedStaff({ ...selectedStaff, status: newStatus });
       }
     } catch (error) {
-      console.error('Error toggling status:', error);
       toast.error(t('common.error'));
     } finally {
       setUpdatingStatus(false);
@@ -161,11 +166,11 @@ export default function AdminDashboard() {
     const consultant = consultants.find(c => c.uid === selectedConsultantId);
     try {
       await consultationService.assignConsultant(caseId, selectedConsultantId, consultant?.name || 'Consultant');
-      toast.success('Consultant assigned');
+      toast.success(t('admin.dashboard.consultant_assigned'));
       setAssigningCaseId(null);
       setSelectedConsultantId('');
     } catch (error) {
-      toast.error('Failed to assign consultant');
+      toast.error(t('admin.dashboard.failed_to_assign'));
     }
   };
 
@@ -174,31 +179,39 @@ export default function AdminDashboard() {
     const quality = qualitySpecialists.find(q => q.uid === selectedQualityId);
     try {
       await consultationService.assignQualitySpecialist(caseId, selectedQualityId, quality?.displayName || 'Quality Specialist');
-      toast.success('Quality Specialist assigned');
+      toast.success(t('admin.dashboard.quality_assigned'));
       setAssigningQualityCaseId(null);
       setSelectedQualityId('');
     } catch (error) {
-      toast.error('Failed to assign quality specialist');
+      toast.error(t('admin.dashboard.failed_to_assign_quality'));
     }
   };
 
-  const exportToCSV = (data: any[], filename: string) => {
+  const sanitizeCsvCell = (val: unknown): string => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    // Neutralise formula-injection: prefix any cell that starts with a formula
+    // trigger character so spreadsheet apps treat it as plain text.
+    const sanitized = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+    // Wrap in double-quotes and escape internal double-quotes per RFC 4180
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  };
+
+  const exportToCSV = (data: Record<string, unknown>[], filename: string) => {
     if (data.length === 0) {
-      toast.error('No data to export');
+      toast.error(t('admin.dashboard.export_no_data'));
       return;
     }
-    
-    const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(obj => 
-      Object.values(obj).map(val => 
-        typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val
-      ).join(',')
+
+    const headers = Object.keys(data[0]).map(sanitizeCsvCell).join(',');
+    const rows = data.map(obj =>
+      Object.values(obj).map(sanitizeCsvCell).join(',')
     );
-    
+
     const csvContent = [headers, ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;

@@ -119,7 +119,7 @@ export default function NewConsultation() {
       delete payload.selectedConsultantName;
     }
 
-    localStorage.setItem('pending_intake', JSON.stringify(payload));
+    sessionStorage.setItem('pending_intake', JSON.stringify(payload));
     router.push('/client/payment');
   };
 

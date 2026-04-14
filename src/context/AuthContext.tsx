@@ -22,6 +22,32 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 });
 
+// --- Session cookie helpers (best-effort, non-blocking) ---
+// The cookie acts as a UX-layer presence marker so middleware can redirect
+// unauthenticated visitors before React hydrates.  Actual security is
+// enforced by Firestore rules; do not rely on this cookie for data access.
+
+async function setSessionCookie(user: User): Promise<void> {
+  try {
+    const idToken = await user.getIdToken();
+    await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    });
+  } catch {
+    // Non-critical — auth still works without the cookie
+  }
+}
+
+async function clearSessionCookie(): Promise<void> {
+  try {
+    await fetch('/api/auth/session', { method: 'DELETE' });
+  } catch {
+    // Non-critical
+  }
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -51,18 +77,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log('Auth state changed:', firebaseUser?.uid);
       setLoading(true);
 
       try {
         setUser(firebaseUser);
 
         if (firebaseUser) {
-          console.log('Fetching profile for:', firebaseUser.uid);
+          // Set session cookie so middleware can redirect before React boots
+          void setSessionCookie(firebaseUser);
           const userProfile = await userService.getUserProfile(firebaseUser.uid);
-          console.log('Profile fetched:', userProfile?.role);
           setProfile(userProfile);
         } else {
+          void clearSessionCookie();
           setProfile(null);
         }
       } catch (error) {
@@ -77,6 +103,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    await clearSessionCookie();
     await auth.signOut();
   };
 

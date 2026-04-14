@@ -35,7 +35,7 @@ export interface SupportMessage {
   userEmail: string;
   userRole: UserRole;
   text: string;
-  status: 'open' | 'closed';
+  status: 'open' | 'closed' | 'resolved';
   createdAt: any;
   updatedAt?: any;
   closedAt?: any;
@@ -88,6 +88,29 @@ export interface IntakeData {
   selectedConsultantName?: string;
 }
 
+export interface ConsultationPaymentInfo {
+  provider?: 'geidea';
+  status?: 'initiated' | 'session_created' | 'session_failed' | 'paid' | 'failed' | 'callback_mismatch';
+  amount?: number;
+  currency?: string;
+  geideaSessionId?: string;
+  geideaOrderId?: string | null;
+  reference?: string | null;
+  responseCode?: string | null;
+  responseMessage?: string | null;
+  detailedResponseCode?: string | null;
+  detailedResponseMessage?: string | null;
+  attemptCount?: number;
+  initiatedAt?: any;
+  lastInitiatedAt?: any;
+  paidAt?: any;
+  failedAt?: any;
+  lastCallbackAt?: any;
+  lastError?: string | null;
+  mismatchReason?: string | null;
+  callbackSummary?: Record<string, unknown>;
+}
+
 export interface ConsultationCase {
   id: string;
   clientId: string;
@@ -112,6 +135,7 @@ export interface ConsultationCase {
   internalNotes?: string;
   rating?: number;
   feedback?: string;
+  payment?: ConsultationPaymentInfo;
 }
 
 
@@ -211,6 +235,10 @@ export interface QualityAuditReport {
   meetingStatus: 'recorded' | 'not-recorded' | 'failed';
   notes: string;
   createdAt: any;
+}
+
+export interface SystemSettings {
+  consultationFee: number;
 }
 
 export interface ChangeRequest {
