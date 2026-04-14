@@ -18,14 +18,18 @@ interface InitiateRequestBody {
 function isValidIntakeData(value: unknown): value is IntakeData {
   if (!value || typeof value !== 'object') return false;
   const intake = value as Record<string, unknown>;
-  return [
+  // notes is present in the type but may be empty — do not require non-empty.
+  const requiredNonEmpty = [
     intake.goal,
     intake.preferredArea,
     intake.budgetRange,
     intake.propertyType,
     intake.preferredDeliveryTime,
-    intake.notes,
-  ].every((field) => typeof field === 'string' && field.trim().length > 0);
+  ];
+  return (
+    requiredNonEmpty.every((field) => typeof field === 'string' && field.trim().length > 0) &&
+    typeof intake.notes === 'string'
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -75,11 +79,10 @@ export async function POST(request: NextRequest) {
   const currency = 'EGP';
 
   let caseId = existingCaseId;
-  let clientName = 'Client';
   let clientEmail: string | null = null;
-  let consultationDoc = null as FirebaseFirestore.DocumentSnapshot | null;
 
   if (caseId) {
+    // Retry path: verify case ownership and pending state
     const existingSnap = await adminDb.collection('consultations').doc(caseId).get();
     if (!existingSnap.exists || existingSnap.data()?.clientId !== uid) {
       return NextResponse.json({ error: 'Invalid case for payment retry' }, { status: 400 });
@@ -87,12 +90,14 @@ export async function POST(request: NextRequest) {
     if (existingSnap.data()?.paymentStatus === 'paid') {
       return NextResponse.json({ error: 'This consultation is already paid', caseId }, { status: 400 });
     }
-    consultationDoc = existingSnap;
-    clientName = existingSnap.data()?.clientName || clientName;
+    // Fetch user email once for the Geidea session (retry path)
+    const userSnap = await adminDb.collection('users').doc(uid).get();
+    clientEmail = userSnap.data()?.email || null;
   } else {
+    // New consultation path: read user once
     const userSnap = await adminDb.collection('users').doc(uid).get();
     const user = userSnap.data() ?? {};
-    clientName = user.displayName || user.email || 'Client';
+    const clientName: string = user.displayName || user.email || 'Client';
     clientEmail = user.email || null;
 
     const hasSelectedConsultant = Boolean(
@@ -133,12 +138,7 @@ export async function POST(request: NextRequest) {
     });
 
     caseId = ref.id;
-    consultationDoc = await ref.get();
-  }
-
-  if (!clientEmail && consultationDoc?.data()?.clientId === uid) {
-    const userSnap = await adminDb.collection('users').doc(uid).get();
-    clientEmail = userSnap.data()?.email || null;
+    // No need to re-read the document — we have all data locally
   }
 
   const merchantReferenceId = caseId!;
@@ -187,20 +187,13 @@ export async function POST(request: NextRequest) {
       cache: 'no-store',
     });
   } catch (error) {
-    await adminDb.collection('consultations').doc(caseId!).set(
-      {
-        payment: {
-          provider: 'geidea',
-          status: 'session_failed',
-          amount: consultationFee,
-          currency,
-          lastError: 'Could not reach payment provider',
-          lastInitiatedAt: FieldValue.serverTimestamp(),
-        },
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    // Use update() with dot notation — set(merge:true) would overwrite the payment map
+    await adminDb.collection('consultations').doc(caseId!).update({
+      'payment.status': 'session_failed',
+      'payment.lastError': 'Could not reach payment provider',
+      'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     return NextResponse.json(
       { error: 'Could not reach payment provider', caseId },
@@ -216,26 +209,18 @@ export async function POST(request: NextRequest) {
   }
 
   if (!geideaResponse.ok || geideaData?.responseCode !== '000' || !geideaData?.session?.id) {
-    await adminDb.collection('consultations').doc(caseId!).set(
-      {
-        payment: {
-          provider: 'geidea',
-          status: 'session_failed',
-          amount: consultationFee,
-          currency,
-          lastError:
-            geideaData?.detailedResponseMessage ||
-            geideaData?.responseMessage ||
-            'Payment session creation failed',
-          responseCode: geideaData?.responseCode ?? null,
-          detailedResponseCode:
-            geideaData?.detailedResponseCode ?? geideaData?.detailResponseCode ?? null,
-          lastInitiatedAt: FieldValue.serverTimestamp(),
-        },
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    await adminDb.collection('consultations').doc(caseId!).update({
+      'payment.status': 'session_failed',
+      'payment.lastError':
+        geideaData?.detailedResponseMessage ||
+        geideaData?.responseMessage ||
+        'Payment session creation failed',
+      'payment.responseCode': geideaData?.responseCode ?? null,
+      'payment.detailedResponseCode':
+        geideaData?.detailedResponseCode ?? geideaData?.detailResponseCode ?? null,
+      'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     return NextResponse.json(
       {
@@ -251,24 +236,18 @@ export async function POST(request: NextRequest) {
 
   const sessionId = geideaData.session.id as string;
 
-  await adminDb.collection('consultations').doc(caseId!).set(
-    {
-      payment: {
-        provider: 'geidea',
-        status: 'session_created',
-        amount: consultationFee,
-        currency,
-        geideaSessionId: sessionId,
-        responseCode: geideaData.responseCode,
-        responseMessage: geideaData.responseMessage ?? null,
-        reference: geideaData.reference ?? null,
-        lastInitiatedAt: FieldValue.serverTimestamp(),
-        attemptCount: FieldValue.increment(1),
-      },
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  // update() with dot notation preserves all existing payment subfields (amount, currency,
+  // initiatedAt, provider, etc.) and correctly handles FieldValue.increment.
+  await adminDb.collection('consultations').doc(caseId!).update({
+    'payment.status': 'session_created',
+    'payment.geideaSessionId': sessionId,
+    'payment.responseCode': geideaData.responseCode,
+    'payment.responseMessage': geideaData.responseMessage ?? null,
+    'payment.reference': geideaData.reference ?? null,
+    'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
+    'payment.attemptCount': FieldValue.increment(1),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
 
   return NextResponse.json({
     sessionId,

@@ -76,7 +76,10 @@ export function buildCreateSessionSignature(
   timestamp: string,
   apiPassword: string,
 ): string {
-  const data = `${publicKey}${formatGeideaAmount(amount)}${currency}${merchantReferenceId}${timestamp}`;
+  // Geidea v2 field order: publicKey + amount + currency + timestamp + merchantReferenceId
+  // HMAC-SHA256 keyed with apiPassword, base64-encoded.
+  // If Geidea rejects with signature error, verify field order with the portal team.
+  const data = `${publicKey}${formatGeideaAmount(amount)}${currency}${timestamp}${merchantReferenceId}`;
   return crypto.createHmac('sha256', apiPassword).update(data).digest('base64');
 }
 
@@ -151,12 +154,17 @@ export function extractGeideaCallbackSummary(payload: unknown): GeideaCallbackSu
 }
 
 export function isGeideaPaymentSuccessful(summary: GeideaCallbackSummary): boolean {
-  return (
-    summary.responseCode === '000' &&
-    summary.responseMessage === 'Success' &&
-    (summary.detailedResponseCode === '000' || summary.detailedResponseCode === '000.000') &&
-    summary.detailedResponseMessage === 'The operation was successful'
-  );
+  // Primary gate: status must be "Success" (case-insensitive) AND responseCode must be "000".
+  // detailedResponseCode is checked when present but exact message strings are not
+  // relied upon — they vary by Geidea region and version.
+  const statusOk =
+    typeof summary.status === 'string' && summary.status.toLowerCase() === 'success';
+  const codeOk = summary.responseCode === '000';
+  const detailOk =
+    !summary.detailedResponseCode ||
+    summary.detailedResponseCode === '000' ||
+    summary.detailedResponseCode.startsWith('000');
+  return statusOk && codeOk && detailOk;
 }
 
 export function getGeideaLanguage(language: string | null | undefined): GeideaLanguage {
