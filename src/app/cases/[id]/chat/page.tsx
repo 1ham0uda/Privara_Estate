@@ -164,6 +164,11 @@ export default function ChatPage() {
   const recordingMetaRef = useRef<{ callId: string; consultationId: string; startedAtMs: number } | null>(null);
   const recorderStoppingRef = useRef(false);
   const finalizedCallStatusesRef = useRef<Map<string, string>>(new Map());
+  // Track which call ID's candidate state has been initialised (avoid clearing on every re-render)
+  const lastResetCallIdRef = useRef<string | null>(null);
+  // Track which offer/answer SDP has been applied so ICE-restart renegotiations are detected
+  const lastAppliedOfferSdpRef = useRef<string | null>(null);
+  const lastAppliedAnswerSdpRef = useRef<string | null>(null);
   const remotePlaybackContextRef = useRef<AudioContext | null>(null);
   const remotePlaybackSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
@@ -775,8 +780,15 @@ export default function ChatPage() {
     };
 
     peerConnection.oniceconnectionstatechange = () => {
-      console.log('[call] ICE state', peerConnection.iceConnectionState);
-      if (peerConnection.iceConnectionState === 'failed') {
+      const iceState = peerConnection.iceConnectionState;
+      console.log('[call] ICE state', iceState);
+      // Attempt ICE restart on disconnect or failure.  For 'disconnected' this often
+      // recovers without full renegotiation; for 'failed' it triggers onnegotiationneeded
+      // on the caller side which sends a fresh offer.
+      if (iceState === 'disconnected' || iceState === 'failed') {
+        peerConnection.restartIce();
+      }
+      if (iceState === 'failed') {
         toast.error(t('call.connection_failed'));
       }
     };
@@ -789,7 +801,21 @@ export default function ChatPage() {
       }
     };
 
-    await flushPendingCandidates();
+    // Caller re-negotiates when ICE restart is needed (triggered by restartIce()).
+    // Skip the initial negotiation (no remote description yet) — that is handled by handleStartCall.
+    if (side === 'caller') {
+      peerConnection.onnegotiationneeded = async () => {
+        if (!peerConnection.currentRemoteDescription) return;
+        try {
+          const offer = await peerConnection.createOffer({ iceRestart: true });
+          await peerConnection.setLocalDescription(offer);
+          callService.saveOffer(callId, offer).catch(() => undefined);
+        } catch {
+          // ignore — if renegotiation fails the call will remain in the failed state
+        }
+      };
+    }
+
     return peerConnection;
   };
 
@@ -881,10 +907,10 @@ export default function ChatPage() {
     if (!profile || !consultation || !activeCall?.offer) return;
     try {
       const localStream = await prepareLocalStream();
-      resetRemoteCandidates();
       setShowCallPanel(true);
 
       const peerConnection = await buildPeerConnection(activeCall.id, 'callee', localStream);
+      lastAppliedOfferSdpRef.current = activeCall.offer.sdp ?? null;
       await peerConnection.setRemoteDescription(new RTCSessionDescription(activeCall.offer));
       await flushPendingCandidates();
       const answer = await peerConnection.createAnswer();
@@ -940,10 +966,35 @@ export default function ChatPage() {
   useEffect(() => {
     if (!activeCall || !profile || !canOpenCall) return;
 
-    if (activeCall.answer && isCallInitiator && peerConnectionRef.current && !peerConnectionRef.current.currentRemoteDescription) {
-      peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(activeCall.answer)).then(() => {
-        flushPendingCandidates();
-      }).catch(() => undefined);
+    // Caller: apply remote answer (initial connect + ICE-restart renegotiation)
+    if (
+      activeCall.answer?.sdp &&
+      isCallInitiator &&
+      peerConnectionRef.current &&
+      peerConnectionRef.current.signalingState !== 'closed' &&
+      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current
+    ) {
+      lastAppliedAnswerSdpRef.current = activeCall.answer.sdp;
+      peerConnectionRef.current
+        .setRemoteDescription(new RTCSessionDescription(activeCall.answer as RTCSessionDescriptionInit))
+        .then(() => flushPendingCandidates())
+        .catch(() => undefined);
+    }
+
+    // Callee: re-apply offer when caller triggers an ICE restart (offer SDP changes)
+    if (
+      activeCall.offer?.sdp &&
+      !isCallInitiator &&
+      peerConnectionRef.current &&
+      peerConnectionRef.current.signalingState !== 'closed' &&
+      activeCall.offer.sdp !== lastAppliedOfferSdpRef.current
+    ) {
+      const pc = peerConnectionRef.current;
+      lastAppliedOfferSdpRef.current = activeCall.offer.sdp;
+      pc.setRemoteDescription(new RTCSessionDescription(activeCall.offer as RTCSessionDescriptionInit))
+        .then(() => pc.createAnswer())
+        .then((answer) => pc.setLocalDescription(answer).then(() => callService.saveAnswer(activeCall.id, answer)))
+        .catch(() => undefined);
     }
 
     if (activeCall.status === 'active') {
@@ -979,6 +1030,17 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!activeCall?.id || !canOpenCall) return;
+
+    // Reset candidate tracking exactly once per unique call ID so that candidates
+    // queued while the call was ringing are not discarded when the callee accepts.
+    if (lastResetCallIdRef.current !== activeCall.id) {
+      lastResetCallIdRef.current = activeCall.id;
+      remoteCandidateIdsRef.current = new Set();
+      pendingCandidatesRef.current = [];
+      lastAppliedOfferSdpRef.current = null;
+      lastAppliedAnswerSdpRef.current = null;
+    }
+
     const sourceRole: 'caller' | 'callee' = isCallInitiator ? 'callee' : 'caller';
 
     const unsubscribeCandidates = callService.subscribeToIceCandidates(activeCall.id, sourceRole, async (candidates) => {

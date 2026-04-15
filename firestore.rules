@@ -292,6 +292,7 @@ service cloud.firestore {
     function canCreateCall() {
       return isValidCall(request.resource.data) &&
         exists(/databases/$(database)/documents/consultations/$(request.resource.data.consultationId)) &&
+        consultationDoc(request.resource.data.consultationId).paymentStatus == 'paid' &&
         request.auth.uid == request.resource.data.initiatedBy &&
         request.resource.data.clientId == consultationDoc(request.resource.data.consultationId).clientId &&
         request.resource.data.consultantId == consultationDoc(request.resource.data.consultationId).consultantId &&

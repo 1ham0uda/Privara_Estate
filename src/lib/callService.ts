@@ -98,7 +98,8 @@ export const callService = {
     const q = query(
       collection(db, 'calls'),
       where('consultationId', '==', consultationId),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(50),
     );
 
     return onSnapshot(
