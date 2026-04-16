@@ -118,7 +118,7 @@ export default function VerifyEmailPage() {
               <Mail className="w-5 h-5 text-gray-600" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-gray-500 mb-0.5">Verification sent to</p>
+              <p className="text-xs text-gray-500 mb-0.5">{t('auth.verify_email.sent_to')}</p>
               <p className="text-sm font-medium text-gray-900 truncate" dir="ltr">
                 {userEmail}
               </p>
