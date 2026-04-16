@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "357838510099",
+    "project_id": "privara-estate",
+    "storage_bucket": "privara-estate.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:357838510099:android:ec2a1bae2d27bf590707e6",
+        "android_client_info": {
+          "package_name": "com.privara.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "357838510099-95va8mtl7nvkt6pgcpamr903ftkrkn7e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3HH7YzLu7-r-Ry6yqfR0-lKuv68JdJeQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "357838510099-95va8mtl7nvkt6pgcpamr903ftkrkn7e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

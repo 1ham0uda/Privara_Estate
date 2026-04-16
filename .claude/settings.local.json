@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(xargs grep:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm install:*)",
+      "Bash(mv app:*)",
+      "Bash(mv components:*)",
+      "Bash(mv hooks:*)",
+      "Bash(mv constants:*)",
+      "Bash(ls .env*)",
+      "Bash(npx expo:*)",
+      "Bash(find web/src -name 'AuthContext.tsx' -not -path '*/node_modules/*')",
+      "Bash(find web/src -path '*verify-email*' -not -path '*/node_modules/*')",
+      "Bash(ls tsconfig*.json package.json)",
+      "Bash(taskkill //F //PID 16936)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $NF}')",
+      "Bash(taskkill //F //PID 15524)",
+      "Bash(npx next *)"
     ]
   }
 }
