@@ -49,21 +49,21 @@ export default function QualityDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="w-10 h-10 border-4 border-black border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-cloud">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (profile?.status === 'deactivated') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
-        <Card className="max-w-md w-full p-8 text-center bg-white border-none shadow-sm" hover={false}>
-          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-8 h-8 text-red-500" />
+      <div className="min-h-screen bg-cloud flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
+        <Card className="max-w-md w-full p-8 text-center border-soft-blue shadow-sm" hover={false}>
+          <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-rose-500" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
-          <p className="text-gray-500 mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
+          <h1 className="font-serif text-2xl font-bold text-ink mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
+          <p className="text-brand-slate mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Button variant="outline" className="w-full" onClick={() => setIsSupportModalOpen(true)}>
               {t('support.new_message')}
@@ -99,15 +99,15 @@ export default function QualityDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <Toaster />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">{t('quality.dashboard_title')}</h1>
-            <p className="text-gray-500 mt-1">{t('quality.dashboard_subtitle')}</p>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('quality.dashboard_title')}</h1>
+            <p className="text-brand-slate mt-1">{t('quality.dashboard_subtitle')}</p>
           </div>
           
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full md:w-auto">
@@ -118,16 +118,16 @@ export default function QualityDashboard() {
                 placeholder={t('quality.search_placeholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-black/5`}
+                className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 bg-white border border-soft-blue rounded-xl text-sm text-ink placeholder:text-brand-slate focus:outline-none focus:border-blue-600 transition-all`}
               />
             </div>
             <Button variant="outline" as={Link} href="/quality/support">{t('admin.dashboard.tab.support')}</Button>
-            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-soft-blue">
               {(['all', 'pending', 'audited'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${filter === f ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${filter === f ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
                 >
                   {t(`quality.filter_${f}`)}
                 </button>
@@ -140,8 +140,8 @@ export default function QualityDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                <ClipboardCheck className="w-6 h-6 text-blue-500" />
+              <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                <ClipboardCheck className="w-6 h-6 text-blue-600" />
               </div>
               <div>
                 <p className="text-sm text-gray-500">{t('quality.stats_assigned')}</p>
@@ -183,8 +183,8 @@ export default function QualityDashboard() {
                 <Card key={c.id} className="p-6 bg-white border-none shadow-sm" hover={false}>
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
-                        <MessageSquare className="w-6 h-6 text-gray-400" />
+                      <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center shrink-0">
+                        <MessageSquare className="w-6 h-6 text-blue-600" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -216,7 +216,7 @@ export default function QualityDashboard() {
                     
                     <div className="flex items-center gap-3">
                       <Link href={`/quality/cases/${c.id}`}>
-                        <Button className="h-11 px-8 rounded-xl shadow-lg shadow-black/5">
+                        <Button className="h-11 px-8 rounded-xl shadow-lg shadow-blue-600/10">
                           {t('quality.review_case')} <ChevronRight className={`w-4 h-4 ${isRTL ? 'rotate-180 mr-2' : 'ml-2'}`} />
                         </Button>
                       </Link>

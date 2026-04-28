@@ -12,7 +12,7 @@ import {
   serverTimestamp,
   limit,
 } from 'firebase/firestore';
-import { db, auth } from '@/src/lib/firebase';
+import { db } from '@/src/lib/firebase';
 import { ConsultationCase, ChangeRequest } from '@/src/types';
 import { notificationService } from './notificationService';
 
@@ -162,6 +162,28 @@ export const consultationService = {
         messageParams: { caseNumber: caseId.substring(0, 8) },
       });
     }
+  },
+
+  async rejectConsultantChange(caseId: string, requestId: string): Promise<void> {
+    const consultation = await this.getConsultation(caseId);
+    if (!consultation) return;
+
+    // Mark the change request as rejected
+    await updateDoc(doc(db, 'changeRequests', requestId), { status: 'rejected' });
+
+    // Clear the pending flag on the consultation
+    await this.updateConsultation(caseId, { reassignmentRequestStatus: 'rejected' });
+
+    // Notify the client that their request was rejected
+    await notificationService.sendNotification({
+      userId: consultation.clientId,
+      title: 'Consultant change request rejected',
+      message: 'Your request to change consultants was not approved.',
+      eventType: 'consultant_change_requested',
+      caseId,
+      titleKey: 'notifications.consultant_change_rejected.title',
+      messageKey: 'notifications.consultant_change_rejected.message',
+    });
   },
 
   async getChangeRequests(caseId?: string): Promise<ChangeRequest[]> {

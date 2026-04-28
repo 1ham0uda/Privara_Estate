@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
-import { Shield, User, LogOut, Menu, X, Globe, Bell } from 'lucide-react';
+import { User, LogOut, Menu, X, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import NotificationDropdown from './NotificationDropdown';
 
@@ -13,43 +13,50 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
   const { language: globalLanguage, setLanguage, t: translate, tForLanguage, isRTL: globalIsRTL } = useLanguage();
   const [isOpen, setIsOpen] = React.useState(false);
 
-  const language = forceLanguage || globalLanguage;
-  const isRTL = forceLanguage ? (forceLanguage === 'ar') : globalIsRTL;
-  
-  // Create a local t function if language is forced
-  const t = (key: string) => {
-    if (forceLanguage) {
-      return tForLanguage(key, forceLanguage);
-    }
-    return translate(key);
-  };
-
-  const toggleLanguage = () => {
-    if (forceLanguage) return;
-    setLanguage(language === 'en' ? 'ar' : 'en');
-  };
+  const language  = forceLanguage || globalLanguage;
+  const isRTL     = forceLanguage ? forceLanguage === 'ar' : globalIsRTL;
+  const t         = (key: string) => forceLanguage ? tForLanguage(key, forceLanguage) : translate(key);
+  const toggleLanguage = () => { if (!forceLanguage) setLanguage(language === 'en' ? 'ar' : 'en'); };
 
   return (
-    <nav className="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <nav className="bg-white/90 backdrop-blur-sm border-b border-soft-blue sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className={`flex justify-between h-14 sm:h-16 ${isRTL ? 'flex-row-reverse' : ''}`}>
+
+          {/* Logo */}
           <div className="flex items-center min-w-0">
-            <Link href="/" className={`flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-2 min-w-0`}>
-              <div className="w-7 h-7 sm:w-9 sm:h-9 shrink-0 bg-black rounded-lg flex items-center justify-center">
-                <Shield className="text-white w-4 h-4 sm:w-5 sm:h-5" />
+            <Link
+              href="/"
+              className={`flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-2.5 min-w-0`}
+            >
+              {/* RR monogram — PDF §02 */}
+              <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 bg-blue-600 rounded-lg flex items-center justify-center select-none">
+                <span className="text-white font-serif font-bold text-sm sm:text-base leading-none tracking-tight" aria-hidden="true">RR</span>
               </div>
-              <span className="text-base sm:text-xl font-bold tracking-tight truncate max-w-[9.5rem] sm:max-w-none">Privara Estate</span>
+              <div className="flex flex-col leading-none truncate max-w-[11rem] sm:max-w-none">
+                <span className="font-serif font-bold text-base sm:text-lg leading-tight">
+                  <span className="text-ink">Real </span><span className="text-blue-600">Real</span><span className="text-ink"> Estate</span>
+                </span>
+                <span className="hidden sm:block text-[10px] font-mono text-brand-slate tracking-[0.12em] uppercase">
+                  Independent Advisory · Egypt
+                </span>
+              </div>
             </Link>
           </div>
 
           {/* Desktop Nav */}
           <div className={`hidden md:flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-6`}>
-            <Link href="/#how-it-works" className="text-sm font-medium text-gray-600 hover:text-black transition-colors">{t('hero.how_it_works')}</Link>
-            
+            <Link
+              href="/#how-it-works"
+              className="text-sm font-medium text-brand-slate hover:text-ink transition-colors"
+            >
+              {t('hero.how_it_works')}
+            </Link>
+
             {!forceLanguage && (
-              <button 
+              <button
                 onClick={toggleLanguage}
-                className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-black transition-colors"
+                className="flex items-center gap-1 text-sm font-medium text-brand-slate hover:text-ink transition-colors"
               >
                 <Globe className="w-4 h-4" />
                 {language === 'en' ? 'العربية' : 'English'}
@@ -61,23 +68,23 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
                 <NotificationDropdown />
                 <Link
                   href={`/${profile.role}/dashboard`}
-                  className="text-sm font-medium text-gray-900 bg-gray-100 px-4 py-2 rounded-full hover:bg-gray-200 transition-colors"
+                  className="text-sm font-medium text-blue-600 bg-soft-blue px-4 py-2 rounded-full hover:bg-blue-100 transition-colors"
                 >
                   {t('nav.dashboard')}
                 </Link>
                 <Link
                   href="/profile"
-                  className={`flex items-center gap-2 p-2 text-gray-600 hover:text-black transition-colors rounded-full hover:bg-gray-100 ${isRTL ? 'flex-row-reverse' : ''}`}
+                  className={`flex items-center gap-2 p-2 text-brand-slate hover:text-ink transition-colors rounded-full hover:bg-soft-blue ${isRTL ? 'flex-row-reverse' : ''}`}
                   title={t('nav.profile')}
                 >
                   <User className="w-5 h-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <span className="text-xs font-mono font-medium uppercase tracking-wide text-brand-slate">
                     {t(`admin.staff.role.${profile.role}`)}
                   </span>
                 </Link>
-                <button 
+                <button
                   onClick={() => signOut()}
-                  className="text-gray-500 hover:text-red-600 transition-colors"
+                  className="text-brand-slate hover:text-rose-600 transition-colors"
                   title={t('nav.logout')}
                 >
                   <LogOut className="w-5 h-5" />
@@ -85,10 +92,15 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
               </div>
             ) : (
               <div className={`flex items-center ${isRTL ? 'space-x-reverse' : ''} space-x-4`}>
-                <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-black transition-colors">{t('nav.login')}</Link>
-                <Link 
-                  href="/register" 
-                  className="text-sm font-medium text-white bg-black px-4 sm:px-6 py-2 rounded-full hover:bg-gray-800 transition-all shadow-lg shadow-black/10"
+                <Link
+                  href="/login"
+                  className="text-sm font-medium text-brand-slate hover:text-ink transition-colors"
+                >
+                  {t('nav.login')}
+                </Link>
+                <Link
+                  href="/register"
+                  className="text-sm font-medium text-white bg-blue-600 px-5 sm:px-6 py-2 rounded-full hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/15"
                 >
                   {t('nav.register')}
                 </Link>
@@ -98,7 +110,10 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center shrink-0">
-            <button onClick={() => setIsOpen(!isOpen)} className="text-gray-600 p-2 rounded-lg hover:bg-gray-100">
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="text-brand-slate p-2 rounded-lg hover:bg-soft-blue"
+            >
               {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
@@ -108,41 +123,60 @@ export default function Navbar({ forceLanguage }: { forceLanguage?: 'en' | 'ar' 
       {/* Mobile Nav */}
       <AnimatePresence>
         {isOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-white border-b border-gray-100 overflow-hidden"
+            className="md:hidden bg-white border-b border-soft-blue overflow-hidden"
           >
-            <div className={`px-4 pt-2 pb-6 space-y-2 ${isRTL ? 'text-right' : ''}`}>
-              <Link href="/#how-it-works" className="block px-3 py-2 text-base font-medium text-gray-600">{t('hero.how_it_works')}</Link>
+            <div className={`px-4 pt-2 pb-6 space-y-1 ${isRTL ? 'text-right' : ''}`}>
+              <Link
+                href="/#how-it-works"
+                className="block px-3 py-2.5 text-sm font-medium text-brand-slate hover:text-ink"
+              >
+                {t('hero.how_it_works')}
+              </Link>
               {!forceLanguage && (
                 <button
                   onClick={toggleLanguage}
-                  className={`w-full px-3 py-2 text-base font-medium text-gray-600 ${isRTL ? 'text-right' : 'text-left'}`}
+                  className={`w-full px-3 py-2.5 text-sm font-medium text-brand-slate ${isRTL ? 'text-right' : 'text-left'}`}
                 >
                   {language === 'en' ? 'العربية' : 'English'}
                 </button>
               )}
               {profile ? (
                 <>
-                  <div className={`flex items-center justify-between px-3 py-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <Link href={`/${profile.role}/dashboard`} className="text-base font-medium text-black">{t('nav.dashboard')}</Link>
+                  <div className={`flex items-center justify-between px-3 py-2.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <Link href={`/${profile.role}/dashboard`} className="text-sm font-medium text-ink">
+                      {t('nav.dashboard')}
+                    </Link>
                     <NotificationDropdown />
                   </div>
-                  <Link href="/profile" className={`flex items-center gap-2 px-3 py-2 text-base font-medium text-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <Link
+                    href="/profile"
+                    className={`flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-brand-slate ${isRTL ? 'flex-row-reverse' : ''}`}
+                  >
                     <User className="w-4 h-4" />
                     <span>{t('nav.profile')}</span>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 ms-auto">
+                    <span className="text-xs font-mono uppercase tracking-wide text-brand-slate ms-auto">
                       {t(`admin.staff.role.${profile.role}`)}
                     </span>
                   </Link>
-                  <button onClick={() => signOut()} className={`block w-full px-3 py-2 text-base font-medium text-red-600 ${isRTL ? 'text-right' : 'text-left'}`}>{t('nav.logout')}</button>
+                  <button
+                    onClick={() => signOut()}
+                    className={`block w-full px-3 py-2.5 text-sm font-medium text-rose-600 ${isRTL ? 'text-right' : 'text-left'}`}
+                  >
+                    {t('nav.logout')}
+                  </button>
                 </>
               ) : (
                 <>
-                  <Link href="/login" className="block px-3 py-2 text-base font-medium text-gray-600">{t('nav.login')}</Link>
-                  <Link href="/register" className="block px-3 py-2 text-base font-medium text-black">{t('nav.register')}</Link>
+                  <Link href="/login" className="block px-3 py-2.5 text-sm font-medium text-brand-slate">
+                    {t('nav.login')}
+                  </Link>
+                  <Link href="/register" className="block px-3 py-2.5 text-sm font-medium text-blue-600">
+                    {t('nav.register')}
+                  </Link>
                 </>
               )}
             </div>

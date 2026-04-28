@@ -234,8 +234,8 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-cloud">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -251,44 +251,44 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <Toaster />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">{t('admin.dashboard.title')}</h1>
-            <p className="text-gray-500 mt-1">{t('admin.dashboard.subtitle')}</p>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('admin.dashboard.title')}</h1>
+            <p className="text-brand-slate mt-1">{t('admin.dashboard.subtitle')}</p>
           </div>
-          <div className="flex overflow-x-auto bg-white p-1 rounded-xl shadow-sm border border-gray-100 hide-scrollbar">
+          <div className="flex overflow-x-auto bg-white p-1 rounded-xl shadow-sm border border-soft-blue hide-scrollbar">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'overview' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'overview' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
             >
               {t('admin.dashboard.tab.overview')}
             </button>
             <button
               onClick={() => setActiveTab('conversations')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'conversations' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'conversations' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
             >
               {t('admin.dashboard.tab.conversations')}
             </button>
             <button
               onClick={() => setActiveTab('staff')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'staff' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
             >
               {t('admin.dashboard.tab.staff')}
             </button>
             <button
               onClick={() => setActiveTab('quality_reports')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'quality_reports' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'quality_reports' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
             >
               {t('admin.dashboard.tab.qualityReports')}
             </button>
             <button
               onClick={() => setActiveTab('support')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'support' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:text-black'}`}
+              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'support' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
             >
               {t('admin.dashboard.tab.support')}
             </button>
@@ -384,7 +384,7 @@ export default function AdminDashboard() {
                             <User className="w-6 h-6 text-gray-300" />
                           </div>
                           <div>
-                            <h3 className="font-bold text-gray-900">{c.clientName || t('common.client')}</h3>
+                            <h3 className="font-bold text-ink">{c.clientName || t('common.client')}</h3>
                             <p className="text-xs text-gray-500">{t('client.goal')}: <span className="capitalize">{t(`intake.goal_${c.intake.goal}`)}</span> • {t('client.started_on')} {formatDate(c.createdAt, language)}</p>
                             {c.intake.selectedConsultantName ? (
                               <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
@@ -407,7 +407,7 @@ export default function AdminDashboard() {
                               <select 
                                 value={selectedConsultantId}
                                 onChange={(e) => setSelectedConsultantId(e.target.value)}
-                                className={`px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-black ${isRTL ? 'text-right' : ''}`}
+                                className={`px-3 py-2 bg-cloud border border-soft-blue rounded-lg text-sm text-ink focus:outline-none focus:border-blue-600 ${isRTL ? 'text-right' : ''}`}
                               >
                                 <option value="">{t('admin.dashboard.case.assignConsultant')}</option>
                                 {consultants.map(con => (
@@ -428,7 +428,7 @@ export default function AdminDashboard() {
                               <select 
                                 value={selectedQualityId}
                                 onChange={(e) => setSelectedQualityId(e.target.value)}
-                                className={`px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-black ${isRTL ? 'text-right' : ''}`}
+                                className={`px-3 py-2 bg-cloud border border-soft-blue rounded-lg text-sm text-ink focus:outline-none focus:border-blue-600 ${isRTL ? 'text-right' : ''}`}
                               >
                                 <option value="">{t('admin.dashboard.case.assignQuality')}</option>
                                 {qualitySpecialists.map(q => (
@@ -484,7 +484,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="space-y-8">
-            <Card className="bg-black text-white border-none p-8" hover={false}>
+            <Card className="bg-ink text-white border-none p-8" hover={false}>
               <h3 className={`text-lg font-bold mb-6 ${isRTL ? 'text-right' : ''}`}>{t('admin.dashboard.section.staffLoad')}</h3>
               
               <div className="space-y-8">
@@ -606,7 +606,7 @@ export default function AdminDashboard() {
                     </div>
                     <h3 className="font-bold text-gray-900 mb-1">{c.clientName || t('common.client')}</h3>
                     <p className="text-xs text-gray-500 mb-4">{t('client.assigned_consultant')}: {c.consultantName || t('admin.dashboard.stat.unassigned')}</p>
-                    <div className="bg-gray-50 p-3 rounded-lg mb-6">
+                    <div className="bg-soft-blue p-3 rounded-lg mb-6">
                       <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t('client.goal')}</p>
                       <p className="text-xs text-gray-700 line-clamp-2">{t(`intake.goal_${c.intake.goal}`)}</p>
                     </div>
@@ -635,7 +635,7 @@ export default function AdminDashboard() {
                           return (
                             <div 
                               key={con.uid} 
-                              className="p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors"
+                              className="p-4 bg-soft-blue rounded-xl cursor-pointer hover:bg-blue-100 transition-colors"
                               onClick={() => {
                                 setSelectedStaff({ ...con, role: 'consultant' });
                                 setShowStaffDetailsModal(true);
@@ -689,7 +689,7 @@ export default function AdminDashboard() {
                   return (
                     <div 
                       key={q.uid} 
-                      className="p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="p-4 bg-soft-blue rounded-xl cursor-pointer hover:bg-blue-100 transition-colors"
                       onClick={() => {
                         setSelectedStaff({ ...q, role: 'quality' });
                         setShowStaffDetailsModal(true);
@@ -777,7 +777,7 @@ export default function AdminDashboard() {
                               </Badge>
                             </div>
                           </div>
-                          <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="bg-soft-blue p-3 rounded-lg">
                             <p className="text-sm break-words"><span className="font-medium">{t('quality.notes')}:</span> {report.notes}</p>
                           </div>
                         </div>
@@ -872,7 +872,7 @@ export default function AdminDashboard() {
                   return (
                     <div className="space-y-3">
                       {staffCases.map(c => (
-                        <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <div key={c.id} className="flex items-center justify-between p-3 bg-soft-blue rounded-xl">
                           <div className={isRTL ? 'text-right' : ''}>
                             <p className="text-xs font-bold">{c.clientName}</p>
                             <p className="text-[10px] text-gray-500">#{c.id.slice(-6)} • {t(`case.stage.${c.stage}`)}</p>
@@ -950,7 +950,7 @@ export default function AdminDashboard() {
           <Card className={`max-w-md w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
             <h2 className="text-2xl font-bold mb-6">{t('admin.dashboard.modal.settings.title')}</h2>
             <div className="space-y-6">
-              <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center justify-between p-4 bg-soft-blue rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div>
                   <p className="text-sm font-bold">{t('admin.dashboard.modal.settings.registrations')}</p>
                   <p className="text-[10px] text-gray-500">{t('admin.dashboard.modal.settings.registrations_desc')}</p>
@@ -959,7 +959,7 @@ export default function AdminDashboard() {
                   <div className={`absolute ${isRTL ? 'left-1' : 'right-1'} top-1 w-4 h-4 bg-white rounded-full shadow-sm`} />
                 </div>
               </div>
-              <div className={`flex items-center justify-between p-4 bg-gray-50 rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center justify-between p-4 bg-soft-blue rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div>
                   <p className="text-sm font-bold">{t('admin.dashboard.modal.settings.maintenance')}</p>
                   <p className="text-[10px] text-gray-500">{t('admin.dashboard.modal.settings.maintenance_desc')}</p>
@@ -974,7 +974,7 @@ export default function AdminDashboard() {
                   type="number" 
                   value={consultationFee}
                   onChange={(e) => setConsultationFee(Number(e.target.value))}
-                  className={`w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-black focus:outline-none ${isRTL ? 'text-right' : ''}`}
+                  className={`w-full px-4 py-2 bg-cloud border border-soft-blue rounded-lg focus:border-blue-600 focus:outline-none text-ink ${isRTL ? 'text-right' : ''}`}
                 />
               </div>
               <div className={`flex gap-3 pt-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -1010,7 +1010,7 @@ export default function AdminDashboard() {
                   toast.success(t('admin.dashboard.export_consultations_success'));
                   setShowExportModal(false);
                 }}
-                className={`w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
+                className={`w-full flex items-center justify-between p-4 bg-soft-blue hover:bg-blue-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
               >
                 <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500">
@@ -1030,7 +1030,7 @@ export default function AdminDashboard() {
                   toast.success(t('admin.dashboard.export_staff_success'));
                   setShowExportModal(false);
                 }}
-                className={`w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
+                className={`w-full flex items-center justify-between p-4 bg-soft-blue hover:bg-blue-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
               >
                 <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500">
@@ -1056,7 +1056,7 @@ export default function AdminDashboard() {
                   toast.success(t('admin.dashboard.export_financial_success'));
                   setShowExportModal(false);
                 }}
-                className={`w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
+                className={`w-full flex items-center justify-between p-4 bg-soft-blue hover:bg-blue-100 rounded-xl transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
               >
                 <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500">

@@ -3,6 +3,7 @@ import {
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   updateProfile,
   type User,
   type Unsubscribe,
@@ -73,6 +74,14 @@ export const authService = {
   async logout(): Promise<void> {
     try {
       await fbSignOut(auth);
+    } catch (err) {
+      throw mapFirebaseError(err);
+    }
+  },
+
+  async resetPassword(email: string): Promise<void> {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
     } catch (err) {
       throw mapFirebaseError(err);
     }

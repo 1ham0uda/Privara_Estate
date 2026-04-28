@@ -78,12 +78,12 @@ export default function ClientDashboard() {
 
   if (profile?.status === 'deactivated') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
-        <Card className="max-w-md w-full p-8 text-center bg-white border-none shadow-xl" hover={false}>
-          <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-10 h-10 text-red-500" />
+      <div className="min-h-screen bg-cloud flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
+        <Card className="max-w-md w-full p-8 text-center border-soft-blue shadow-sm" hover={false}>
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-10 h-10 text-rose-500" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          <h2 className="font-serif text-2xl font-bold text-ink mb-4">
             {t('auth.account_deactivated') || 'Account Deactivated'}
           </h2>
           <p className="text-gray-600 mb-8 leading-relaxed">
@@ -117,14 +117,14 @@ export default function ClientDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">{t('client.welcome').replace('{name}', profile?.displayName || '')}</h1>
-            <p className="text-gray-500 mt-1">{t('client.dashboard_subtitle')}</p>
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('client.welcome').replace('{name}', profile?.displayName || '')}</h1>
+            <p className="text-brand-slate mt-1">{t('client.dashboard_subtitle')}</p>
           </div>
           {!activeCase && (
             <Link href="/client/new-consultation">
@@ -140,7 +140,7 @@ export default function ClientDashboard() {
           <div className="lg:col-span-2 space-y-8">
             <section>
               <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-500" /> {t('client.active_consultation')}
+                <Clock className="w-5 h-5 text-blue-600" /> {t('client.active_consultation')}
               </h2>
               
               {activeCase ? (
@@ -160,20 +160,20 @@ export default function ClientDashboard() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                      <div className="bg-gray-50 p-4 rounded-xl">
+                      <div className="bg-soft-blue p-4 rounded-xl">
                         <p className="text-xs font-medium text-gray-400 uppercase mb-1">{t('client.current_stage')}</p>
                         <p className="font-bold text-gray-900">{t(`case.stage.${activeCase.stage}`)}</p>
                       </div>
-                      <div className="bg-gray-50 p-4 rounded-xl">
+                      <div className="bg-soft-blue p-4 rounded-xl">
                         <p className="text-xs font-medium text-gray-400 uppercase mb-1">{t('client.goal')}</p>
                         <p className="font-bold text-gray-900 capitalize">{activeCase.intake.goal}</p>
                       </div>
                     </div>
 
                     {activeCase.consultantId ? (
-                      <div className="flex items-center justify-between p-4 bg-black text-white rounded-2xl">
+                      <div className="flex items-center justify-between p-4 bg-ink text-white rounded-2xl">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center overflow-hidden relative">
+                          <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center overflow-hidden relative">
                             {consultants[activeCase.consultantId]?.avatarUrl ? (
                               <Image 
                                 src={consultants[activeCase.consultantId].avatarUrl!} 
@@ -192,7 +192,7 @@ export default function ClientDashboard() {
                           </div>
                         </div>
                         <Link href={`/cases/${activeCase.id}/chat`}>
-                          <Button className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm">
+                          <Button className="bg-white text-ink hover:bg-soft-blue px-4 py-2 rounded-lg text-sm">
                             <MessageSquare className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('client.chat')}
                           </Button>
                         </Link>
@@ -232,7 +232,7 @@ export default function ClientDashboard() {
                     placeholder={t('client.find_consultation')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-black shadow-sm`}
+                    className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2 bg-white border border-soft-blue rounded-xl text-sm focus:outline-none focus:border-blue-600 shadow-sm text-ink placeholder:text-brand-slate`}
                   />
                 </div>
               </div>
@@ -242,8 +242,8 @@ export default function ClientDashboard() {
                   {filteredHistory.map(c => (
                     <Card key={c.id} className="flex items-center justify-between p-4 bg-white border-none shadow-sm">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        <div className="w-10 h-10 bg-soft-blue rounded-xl flex items-center justify-center">
+                          <CheckCircle2 className="w-5 h-5 text-blue-600" />
                         </div>
                         <div>
                           <p className="font-bold">{t('client.case_number')} {c.id.slice(-6)}</p>
@@ -286,20 +286,20 @@ export default function ClientDashboard() {
 
           {/* Sidebar Info */}
           <div className="space-y-8">
-            <Card className="bg-black text-white border-none p-8" hover={false}>
-              <Shield className="w-10 h-10 mb-6 text-gray-400" />
-              <h3 className="text-xl font-bold mb-4">{t('client.privacy_promise_title')}</h3>
-              <ul className="space-y-4 text-sm text-gray-400">
+            <Card className="bg-ink text-white border-none p-8" hover={false}>
+              <Shield className="w-10 h-10 mb-6 text-white/30" />
+              <h3 className="font-serif text-xl font-bold mb-4">{t('client.privacy_promise_title')}</h3>
+              <ul className="space-y-4 text-sm text-white/60">
                 <li className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
                   <span>{t('client.privacy_promise_text')}</span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
                   <span>{t('client.privacy_promise_text_2')}</span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
                   <span>{t('client.privacy_promise_text_3')}</span>
                 </li>
               </ul>

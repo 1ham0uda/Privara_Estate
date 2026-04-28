@@ -46,21 +46,21 @@ export default function ConsultantDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="w-10 h-10 border-4 border-black border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-cloud">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (profile?.status === 'deactivated') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
-        <Card className="max-w-md w-full p-8 text-center bg-white border-none shadow-sm" hover={false}>
-          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-8 h-8 text-red-500" />
+      <div className="min-h-screen bg-cloud flex items-center justify-center p-4" dir={isRTL ? 'rtl' : 'ltr'}>
+        <Card className="max-w-md w-full p-8 text-center border-soft-blue shadow-sm" hover={false}>
+          <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-rose-500" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
-          <p className="text-gray-500 mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
+          <h1 className="font-serif text-2xl font-bold text-ink mb-2">{t('auth.account_deactivated') || 'Account Deactivated'}</h1>
+          <p className="text-brand-slate mb-8">{t('auth.account_deactivated_desc') || 'Your account has been deactivated by the administrator. Please contact support if you believe this is an error.'}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Button variant="outline" className="w-full" onClick={() => setIsSupportModalOpen(true)}>
               {t('support.new_message')}
@@ -82,21 +82,21 @@ export default function ConsultantDashboard() {
     : 'N/A';
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-12">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">{t('consultant.dashboard_title')}</h1>
-          <p className="text-gray-500 mt-1">{t('consultant.dashboard_subtitle')}</p>
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('consultant.dashboard_title')}</h1>
+          <p className="text-brand-slate mt-1">{t('consultant.dashboard_subtitle')}</p>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
             <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                <LayoutDashboard className="w-6 h-6 text-blue-500" />
+              <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                <LayoutDashboard className="w-6 h-6 text-blue-600" />
               </div>
               <div>
                 <p className="text-sm text-gray-500">{t('consultant.active_cases')}</p>
@@ -131,8 +131,8 @@ export default function ConsultantDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <section>
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-500" /> {t('consultant.active_consultations')}
+              <h2 className="font-serif text-xl font-bold mb-6 flex items-center gap-2 text-ink">
+                <Clock className="w-5 h-5 text-blue-600" /> {t('consultant.active_consultations')}
               </h2>
               
               <div className="space-y-4">
@@ -141,7 +141,7 @@ export default function ConsultantDashboard() {
                     <Card key={c.id} className="p-6 border-none shadow-sm bg-white" hover={true}>
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden relative">
+                          <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center overflow-hidden relative">
                             {c.clientAvatarUrl ? (
                               <Image 
                                 src={c.clientAvatarUrl} 
@@ -237,19 +237,19 @@ export default function ConsultantDashboard() {
           </div>
 
           <div className="space-y-8">
-            <Card className="bg-black text-white border-none p-8" hover={false}>
-              <h3 className="text-lg font-bold mb-4">{t('consultant.guidelines_title')}</h3>
-              <ul className="space-y-4 text-sm text-gray-400">
+            <Card className="bg-ink text-white border-none p-8" hover={false}>
+              <h3 className="font-serif text-lg font-bold mb-4">{t('consultant.guidelines_title')}</h3>
+              <ul className="space-y-4 text-sm text-white/60">
                 <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 bg-gray-800 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5">1</div>
+                  <div className="w-5 h-5 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5 shrink-0">1</div>
                   <span>{t('consultant.guideline_1')}</span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 bg-gray-800 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5">2</div>
+                  <div className="w-5 h-5 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5 shrink-0">2</div>
                   <span>{t('consultant.guideline_2')}</span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <div className="w-5 h-5 bg-gray-800 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5">3</div>
+                  <div className="w-5 h-5 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-white mt-0.5 shrink-0">3</div>
                   <span>{t('consultant.guideline_3')}</span>
                 </li>
               </ul>

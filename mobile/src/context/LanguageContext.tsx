@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Alert, I18nManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Language = 'en' | 'ar';
@@ -168,7 +169,15 @@ const translations: Record<Language, Record<string, string>> = {
     'case.submit_rating': 'Submit Rating',
     'case.request_change': 'Request Consultant Change',
     'case.change_reason': 'Reason for change',
-    'case.change_pending': 'Change request pending',
+    'case.change_hint': 'Not satisfied with your consultant? You can request a change.',
+    'case.change_reason_hint': 'Please explain why you would like a different consultant.',
+    'case.change_pending': 'Pending',
+    'case.change_pending_hint': 'Your request is being reviewed by our team.',
+    'case.change_request_submitted': 'Your consultant change request has been submitted.',
+    'case.reason_required': 'Please provide a reason for the change request.',
+    'case.rate_placeholder': 'Share your experience with this consultation…',
+    'case.rating_required': 'Please select a star rating before submitting.',
+    'case.thank_you_rating': 'Thank you for your feedback!',
     'case.mark_completed': 'Mark Completed',
     'case.upload_report': 'Upload Report',
     'case.upload_recording': 'Upload Meeting Recording',
@@ -198,6 +207,10 @@ const translations: Record<Language, Record<string, string>> = {
     'payment.pay_now': 'Pay Now',
     'payment.success': 'Payment successful!',
     'payment.failed': 'Payment failed. Please try again.',
+    'payment.checking': 'Verifying payment, please wait…',
+    'payment.timeout': 'Could not confirm payment. Did you complete the payment?',
+    'payment.check_again': "I've Paid — Check Again",
+    'payment.cancel': 'Cancel Payment',
 
     // Support
     'support.title': 'Support',
@@ -232,9 +245,86 @@ const translations: Record<Language, Record<string, string>> = {
     'admin.clients.title': 'Client Management',
     'admin.assign_consultant': 'Assign Consultant',
     'admin.assign_quality': 'Assign Quality Specialist',
+    'admin.reassign_consultant': 'Reassign Consultant',
+    'admin.reassign_quality': 'Reassign Quality Specialist',
+    'admin.select_consultant': 'Select Consultant',
+    'admin.select_quality': 'Select Quality Specialist',
+    'admin.pending_reassignment': 'Pending Reassignment Request',
+    'admin.approve': 'Approve',
+    'admin.reject': 'Reject',
+    'admin.reassignment_rejected': 'Reassignment request rejected.',
     'admin.settings': 'Settings',
     'admin.consultation_fee': 'Consultation Fee',
     'admin.export': 'Export CSV',
+    'admin.mark_paid': 'Mark as Paid',
+    'admin.mark_paid_confirm': 'Mark this case as paid? This cannot be undone.',
+    'admin.participants': 'Participants',
+    'admin.client': 'Client',
+    'admin.requested_consultant': 'Requested Consultant',
+    'admin.none': 'None',
+    'admin.timeline': 'Activity Timeline',
+    'admin.timeline_case_created': 'Case created',
+    'admin.timeline_payment_paid': 'Payment received',
+    'admin.timeline_payment_pending': 'Payment pending',
+    'admin.timeline_consultant_assigned': 'Consultant assigned',
+    'admin.timeline_quality_assigned': 'Quality specialist assigned',
+    'admin.overview': 'Overview',
+    'admin.conversations': 'Conversations',
+    'admin.quality_reports': 'Quality Reports',
+    'admin.support': 'Support',
+    'admin.unassigned_cases': 'Unassigned Cases',
+    'admin.active_cases': 'Active Cases',
+    'admin.no_unassigned': 'No unassigned cases',
+    'admin.no_active': 'No active cases',
+    'admin.staff_load': 'Staff Load',
+    'admin.active_count': '{count} active',
+    'admin.monitor': 'Monitor',
+    'admin.deactivate': 'Deactivate',
+    'admin.activate': 'Activate',
+    'admin.deactivate_confirm': 'Deactivate {name}? They will not be able to log in.',
+    'admin.activate_confirm': 'Activate {name}? They will be able to log in again.',
+    'admin.cannot_deactivate': 'Cannot deactivate: staff member has active cases. Reassign them first.',
+    'admin.staff_detail': 'Staff Details',
+    'admin.cases_assigned': 'Assigned Cases',
+    'admin.no_cases_assigned': 'No cases assigned',
+    'admin.fee_updated': 'Fee updated successfully.',
+    // Clients
+    'admin.clients.total': 'Total Clients',
+    'admin.clients.with_consultations': 'With Consultations',
+    'admin.clients.without_consultations': 'Without Consultations',
+    'admin.clients.filter_all': 'All',
+    'admin.clients.filter_with': 'With Consultations',
+    'admin.clients.filter_without': 'Without Consultations',
+    'admin.clients.deactivated': 'Deactivated',
+    'admin.clients.active_count': 'Active',
+    'admin.clients.completed_count': 'Completed',
+    // Staff
+    'admin.staff.filter_all': 'All Roles',
+    'admin.staff.experience': 'Experience',
+    'admin.staff.years_exp': 'yrs exp',
+    'admin.staff.total_consultations': 'Total',
+    'admin.staff.active_consultations': 'Active',
+    'admin.staff.cases_in_progress': 'Cases in Progress',
+    'admin.staff.reassign': 'Reassign',
+    'admin.staff.reassigning': 'Reassigning…',
+    'admin.staff.no_active_cases': 'No active cases',
+    // Support (admin workspace)
+    'admin.support.select_ticket': 'Select a ticket to view',
+    'admin.support.reply': 'Reply',
+    'admin.support.close_ticket': 'Close Ticket',
+    'admin.support.ticket_closed': 'This ticket is closed.',
+    'admin.support.send': 'Send',
+    'admin.support.type_reply': 'Type your reply…',
+    'admin.support.close_confirm': 'Close this support ticket?',
+    'admin.support.closed_by': 'Closed',
+    // Export
+    'admin.export_consultations': 'Export Consultations',
+    'admin.export_staff': 'Export Staff',
+    'admin.export_quality': 'Export Quality Reports',
+    'admin.export_empty': 'No data to export.',
+    'admin.export_title': 'Export Reports',
+    // Case detail
+    'case.view_chat': 'View Chat History',
 
     // Quality
     'quality.audit': 'Quality Audit',
@@ -246,6 +336,12 @@ const translations: Record<Language, Record<string, string>> = {
     'quality.recorded': 'Recorded',
     'quality.not_recorded': 'Not Recorded',
     'quality.failed': 'Failed',
+    'quality.audit_notes': 'Audit Notes',
+    'quality.notes_placeholder': 'Describe quality observations, issues found, and recommendations…',
+    'quality.notes_required': 'Please add audit notes before submitting.',
+    'quality.previous_reports': 'Audit Reports',
+    'quality.no_reports': 'No audit reports yet',
+    'quality.report_submitted': 'Audit report submitted successfully.',
 
     // Consultant
     'consultant.experience': 'Years of Experience',
@@ -400,7 +496,15 @@ const translations: Record<Language, Record<string, string>> = {
     'case.submit_rating': 'إرسال التقييم',
     'case.request_change': 'طلب تغيير المستشار',
     'case.change_reason': 'سبب التغيير',
-    'case.change_pending': 'طلب التغيير معلق',
+    'case.change_hint': 'غير راضٍ عن مستشارك؟ يمكنك طلب تغييره.',
+    'case.change_reason_hint': 'يرجى توضيح سبب رغبتك في تغيير المستشار.',
+    'case.change_pending': 'معلق',
+    'case.change_pending_hint': 'طلبك قيد المراجعة من قِبل الفريق.',
+    'case.change_request_submitted': 'تم تقديم طلب تغيير المستشار.',
+    'case.reason_required': 'يرجى تقديم سبب طلب التغيير.',
+    'case.rate_placeholder': 'شاركنا تجربتك مع هذه الاستشارة…',
+    'case.rating_required': 'يرجى اختيار تقييم بالنجوم قبل الإرسال.',
+    'case.thank_you_rating': 'شكراً على ملاحظاتك!',
     'case.mark_completed': 'وضع علامة مكتمل',
     'case.upload_report': 'رفع التقرير',
     'case.upload_recording': 'رفع تسجيل الاجتماع',
@@ -428,6 +532,10 @@ const translations: Record<Language, Record<string, string>> = {
     'payment.pay_now': 'ادفع الآن',
     'payment.success': 'تم الدفع بنجاح!',
     'payment.failed': 'فشل الدفع. حاول مرة أخرى.',
+    'payment.checking': 'جارٍ التحقق من الدفع، يرجى الانتظار…',
+    'payment.timeout': 'تعذّر تأكيد الدفع. هل أتممت عملية الدفع؟',
+    'payment.check_again': 'لقد دفعت — تحقق مجدداً',
+    'payment.cancel': 'إلغاء الدفع',
 
     'support.title': 'الدعم',
     'support.new_ticket': 'تذكرة جديدة',
@@ -458,9 +566,81 @@ const translations: Record<Language, Record<string, string>> = {
     'admin.clients.title': 'إدارة العملاء',
     'admin.assign_consultant': 'تعيين مستشار',
     'admin.assign_quality': 'تعيين أخصائي جودة',
+    'admin.reassign_consultant': 'إعادة تعيين المستشار',
+    'admin.reassign_quality': 'إعادة تعيين أخصائي الجودة',
+    'admin.select_consultant': 'اختر مستشاراً',
+    'admin.select_quality': 'اختر أخصائي جودة',
+    'admin.pending_reassignment': 'طلب إعادة تعيين معلق',
+    'admin.approve': 'موافقة',
+    'admin.reject': 'رفض',
+    'admin.reassignment_rejected': 'تم رفض طلب إعادة التعيين.',
     'admin.settings': 'الإعدادات',
     'admin.consultation_fee': 'رسوم الاستشارة',
     'admin.export': 'تصدير CSV',
+    'admin.mark_paid': 'وضع علامة مدفوع',
+    'admin.mark_paid_confirm': 'هل تريد وضع علامة مدفوع على هذه القضية؟ لا يمكن التراجع عن ذلك.',
+    'admin.participants': 'المشاركون',
+    'admin.client': 'العميل',
+    'admin.requested_consultant': 'المستشار المطلوب',
+    'admin.none': 'لا يوجد',
+    'admin.timeline': 'سجل النشاط',
+    'admin.timeline_case_created': 'تم إنشاء القضية',
+    'admin.timeline_payment_paid': 'تم استلام الدفع',
+    'admin.timeline_payment_pending': 'الدفع معلق',
+    'admin.timeline_consultant_assigned': 'تم تعيين المستشار',
+    'admin.timeline_quality_assigned': 'تم تعيين أخصائي الجودة',
+    'admin.overview': 'نظرة عامة',
+    'admin.conversations': 'المحادثات',
+    'admin.quality_reports': 'تقارير الجودة',
+    'admin.support': 'الدعم',
+    'admin.unassigned_cases': 'القضايا غير المعيّنة',
+    'admin.active_cases': 'القضايا النشطة',
+    'admin.no_unassigned': 'لا توجد قضايا غير معيّنة',
+    'admin.no_active': 'لا توجد قضايا نشطة',
+    'admin.staff_load': 'حمل الموظفين',
+    'admin.active_count': '{count} نشط',
+    'admin.monitor': 'مراقبة',
+    'admin.deactivate': 'تعطيل',
+    'admin.activate': 'تفعيل',
+    'admin.deactivate_confirm': 'تعطيل {name}؟ لن يتمكنوا من تسجيل الدخول.',
+    'admin.activate_confirm': 'تفعيل {name}؟ سيتمكنون من تسجيل الدخول مجدداً.',
+    'admin.cannot_deactivate': 'لا يمكن التعطيل: الموظف لديه قضايا نشطة. أعد تعيينها أولاً.',
+    'admin.staff_detail': 'تفاصيل الموظف',
+    'admin.cases_assigned': 'القضايا المعيّنة',
+    'admin.no_cases_assigned': 'لا توجد قضايا معيّنة',
+    'admin.fee_updated': 'تم تحديث الرسوم بنجاح.',
+    'admin.clients.total': 'إجمالي العملاء',
+    'admin.clients.with_consultations': 'لديهم استشارات',
+    'admin.clients.without_consultations': 'بدون استشارات',
+    'admin.clients.filter_all': 'الكل',
+    'admin.clients.filter_with': 'لديهم استشارات',
+    'admin.clients.filter_without': 'بدون استشارات',
+    'admin.clients.deactivated': 'معطل',
+    'admin.clients.active_count': 'نشط',
+    'admin.clients.completed_count': 'مكتمل',
+    'admin.staff.filter_all': 'جميع الأدوار',
+    'admin.staff.experience': 'الخبرة',
+    'admin.staff.years_exp': 'سنوات خبرة',
+    'admin.staff.total_consultations': 'المجموع',
+    'admin.staff.active_consultations': 'نشط',
+    'admin.staff.cases_in_progress': 'قضايا قيد التنفيذ',
+    'admin.staff.reassign': 'إعادة تعيين',
+    'admin.staff.reassigning': 'جارٍ إعادة التعيين…',
+    'admin.staff.no_active_cases': 'لا توجد قضايا نشطة',
+    'admin.support.select_ticket': 'اختر تذكرة للعرض',
+    'admin.support.reply': 'رد',
+    'admin.support.close_ticket': 'إغلاق التذكرة',
+    'admin.support.ticket_closed': 'هذه التذكرة مغلقة.',
+    'admin.support.send': 'إرسال',
+    'admin.support.type_reply': 'اكتب ردك…',
+    'admin.support.close_confirm': 'هل تريد إغلاق هذه التذكرة؟',
+    'admin.support.closed_by': 'مغلقة',
+    'admin.export_consultations': 'تصدير الاستشارات',
+    'admin.export_staff': 'تصدير الموظفين',
+    'admin.export_quality': 'تصدير تقارير الجودة',
+    'admin.export_empty': 'لا توجد بيانات للتصدير.',
+    'admin.export_title': 'تصدير التقارير',
+    'case.view_chat': 'عرض سجل المحادثة',
 
     'quality.audit': 'تدقيق الجودة',
     'quality.classification': 'التصنيف',
@@ -471,6 +651,12 @@ const translations: Record<Language, Record<string, string>> = {
     'quality.recorded': 'مسجل',
     'quality.not_recorded': 'غير مسجل',
     'quality.failed': 'فشل',
+    'quality.audit_notes': 'ملاحظات التدقيق',
+    'quality.notes_placeholder': 'صف ملاحظات الجودة والمشكلات والتوصيات…',
+    'quality.notes_required': 'يرجى إضافة ملاحظات قبل الإرسال.',
+    'quality.previous_reports': 'تقارير التدقيق',
+    'quality.no_reports': 'لا توجد تقارير تدقيق بعد',
+    'quality.report_submitted': 'تم إرسال تقرير التدقيق بنجاح.',
 
     'consultant.experience': 'سنوات الخبرة',
     'consultant.specialties': 'التخصصات',
@@ -492,13 +678,32 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (stored === 'ar' || stored === 'en') setLanguageState(stored);
+      if (stored === 'ar' || stored === 'en') {
+        setLanguageState(stored);
+        // Ensure RTL state matches the persisted language on cold start
+        const shouldBeRTL = stored === 'ar';
+        if (I18nManager.isRTL !== shouldBeRTL) {
+          I18nManager.forceRTL(shouldBeRTL);
+        }
+      }
     });
   }, []);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     AsyncStorage.setItem(STORAGE_KEY, lang);
+    // Apply RTL layout direction. I18nManager changes require an app reload
+    // to fully re-render the flex layout tree on Android.
+    const shouldBeRTL = lang === 'ar';
+    if (I18nManager.isRTL !== shouldBeRTL) {
+      I18nManager.forceRTL(shouldBeRTL);
+      Alert.alert(
+        shouldBeRTL ? 'تغيير الاتجاه' : 'Layout Direction Changed',
+        shouldBeRTL
+          ? 'يرجى إعادة تشغيل التطبيق لتطبيق اتجاه النص العربي.'
+          : 'Please restart the app to apply the layout direction change.',
+      );
+    }
   };
 
   const t = (key: string, vars?: TranslationVars): string => {

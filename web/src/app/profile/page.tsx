@@ -54,14 +54,14 @@ export default function ProfilePage() {
 
   if (!user || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-900" />
+      <div className="min-h-screen flex items-center justify-center bg-cloud">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-10" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud pb-10" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-10">
         <motion.div
@@ -70,15 +70,15 @@ export default function ProfilePage() {
           className="space-y-6"
         >
           <div className={isRTL ? 'text-right' : 'text-left'}>
-            <h1 className="text-3xl font-bold text-gray-900">{t('profile.title')}</h1>
-            <p className="mt-2 text-sm sm:text-base text-gray-600">{t('profile.subtitle')}</p>
+            <h1 className="font-serif text-3xl font-bold text-ink">{t('profile.title')}</h1>
+            <p className="mt-2 text-sm sm:text-base text-brand-slate">{t('profile.subtitle')}</p>
           </div>
 
           <Card hover={false}>
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">{t('profile.full_name')}</label>
+                  <label className="block text-sm font-medium text-ink">{t('profile.full_name')}</label>
                   <div className="relative">
                     <User className={`absolute top-3 ${isRTL ? 'right-3' : 'left-3'} w-5 h-5 text-gray-400`} />
                     <Input
@@ -93,16 +93,16 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">{t('profile.email')}</label>
+                  <label className="block text-sm font-medium text-ink">{t('profile.email')}</label>
                   <div className="relative">
                     <Mail className={`absolute top-3 ${isRTL ? 'right-3' : 'left-3'} w-5 h-5 text-gray-400`} />
-                    <Input type="email" value={profile.email} disabled className={isRTL ? 'pr-10 bg-gray-100 text-right' : 'pl-10 bg-gray-100'} />
+                    <Input type="email" value={profile.email} disabled className={isRTL ? 'pr-10 bg-gray-100 text-right' : 'pl-10 bg-soft-blue opacity-70'} />
                   </div>
                   <p className="text-xs text-gray-500">{t('profile.email_note')}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">{t('profile.phone')}</label>
+                  <label className="block text-sm font-medium text-ink">{t('profile.phone')}</label>
                   <div className="relative">
                     <Phone className={`absolute top-3 ${isRTL ? 'right-3' : 'left-3'} w-5 h-5 text-gray-400`} />
                     <Input
@@ -116,7 +116,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">{t('profile.location')}</label>
+                  <label className="block text-sm font-medium text-ink">{t('profile.location')}</label>
                   <div className="relative">
                     <MapPin className={`absolute top-3 ${isRTL ? 'right-3' : 'left-3'} w-5 h-5 text-gray-400`} />
                     <Input
@@ -132,7 +132,7 @@ export default function ProfilePage() {
 
               <div className={`pt-2 flex flex-col sm:flex-row sm:items-center gap-3 justify-between ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
                 <div>
-                  {success && <span className="text-green-600 text-sm font-medium">{t('profile.success')}</span>}
+                  {success && <span className="text-blue-600 text-sm font-medium">{t('profile.success')}</span>}
                   {error && <span className="text-red-600 text-sm font-medium">{error}</span>}
                 </div>
                 <Button type="submit" disabled={loading} className="gap-2">

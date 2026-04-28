@@ -11,6 +11,7 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
+  limit,
 } from 'firebase/firestore';
 import { db } from '@/src/lib/firebase';
 import { SupportMessage, UserRole } from '@/src/types';
@@ -145,7 +146,8 @@ export const supportService = {
   subscribeToSupportMessages(userId: string | undefined, callback: (messages: SupportMessage[]) => void) {
     const q = userId
       ? query(collection(db, 'supportMessages'), where('userId', '==', userId), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'supportMessages'), orderBy('createdAt', 'desc'));
+      // Admin view: cap at 50 most recent to avoid unbounded reads
+      : query(collection(db, 'supportMessages'), orderBy('createdAt', 'desc'), limit(50));
 
     return onSnapshot(q, (snapshot) => {
       const messages = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as SupportMessage));

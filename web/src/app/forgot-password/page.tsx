@@ -52,7 +52,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Toaster position="top-center" />
       <Navbar />
       <main className="max-w-md mx-auto px-4 py-12">
@@ -63,8 +63,8 @@ export default function ForgotPasswordPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">{t('auth.forgotPassword.title')}</h1>
-            <p className="text-sm text-gray-500 mt-1">{t('auth.forgotPassword.subtitle')}</p>
+            <h1 className="font-serif text-2xl font-bold text-ink">{t('auth.forgotPassword.title')}</h1>
+            <p className="text-sm text-brand-slate mt-1">{t('auth.forgotPassword.subtitle')}</p>
           </div>
         </div>
 
