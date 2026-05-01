@@ -1,6 +1,8 @@
 {
   "name": "real-real-estate-functions",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
@@ -10,8 +12,8 @@
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.0.0",
-    "firebase-admin": "^13.7.0",
-    "firebase-functions": "^6.4.0"
+    "firebase-admin": "^13.8.0",
+    "firebase-functions": "^6.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
