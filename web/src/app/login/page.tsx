@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const initialRedirect = getParam(params.redirect);
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+    <Suspense fallback={<div className="min-h-screen bg-cloud" />}>
       <LoginPageClient initialRedirect={initialRedirect} />
     </Suspense>
   );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
+import { checkRateLimit, rateLimitResponse } from '@/src/lib/rateLimit';
 import { getAdminAuth, getAdminDb } from '@/src/lib/firebase-admin';
 import { IntakeData } from '@/src/types';
 import {
@@ -13,6 +14,7 @@ interface InitiateRequestBody {
   intake?: IntakeData;
   caseId?: string;
   language?: string;
+  discountCode?: string;
 }
 
 function isValidIntakeData(value: unknown): value is IntakeData {
@@ -56,6 +58,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 
+  // 3 payment initiations per user per 5 minutes — prevents accidental double-charges
+  if (!checkRateLimit(`pay-initiate:${uid}`, 3, 5 * 60_000)) return rateLimitResponse();
+
   let body: InitiateRequestBody;
   try {
     body = (await request.json()) as InitiateRequestBody;
@@ -66,6 +71,7 @@ export async function POST(request: NextRequest) {
   const existingCaseId = typeof body.caseId === 'string' && body.caseId.trim() ? body.caseId.trim() : null;
   const requestedIntake = body.intake;
   const checkoutLanguage = getGeideaLanguage(body.language);
+  const rawDiscountCode = typeof body.discountCode === 'string' ? body.discountCode.trim().toUpperCase() : null;
 
   if (!existingCaseId && !isValidIntakeData(requestedIntake)) {
     return NextResponse.json({ error: 'A valid intake payload is required' }, { status: 400 });
@@ -73,10 +79,49 @@ export async function POST(request: NextRequest) {
 
   const adminDb = getAdminDb();
   const settingsSnap = await adminDb.collection('settings').doc('system').get();
-  const consultationFee = settingsSnap.exists
-    ? Number(settingsSnap.data()?.consultationFee ?? 500)
-    : 500;
+  const settingsData = settingsSnap.data() ?? {};
+  const standardFee = settingsData.standardFee ? Number(settingsData.standardFee) : Number(settingsData.consultationFee ?? 500);
+  const proFee = settingsData.proFee ? Number(settingsData.proFee) : standardFee;
   const currency = 'EGP';
+
+  // Resolve fee tier: look up consultant's feeTier when one is pre-selected
+  const selectedConsultantUid = requestedIntake?.selectedConsultantUid ?? null;
+  let baseFee = standardFee;
+  if (selectedConsultantUid) {
+    const consultantSnap = await adminDb.collection('consultantProfiles').doc(selectedConsultantUid).get();
+    if (consultantSnap.exists && consultantSnap.data()?.feeTier === 'pro') {
+      baseFee = proFee;
+    }
+  }
+
+  // Server-side discount validation
+  let discountPercent = 0;
+  let appliedDiscountCode: string | null = null;
+  let discountDocId: string | null = null;
+  if (rawDiscountCode) {
+    const discountSnap = await adminDb
+      .collection('discountCodes')
+      .where('code', '==', rawDiscountCode)
+      .where('active', '==', true)
+      .limit(1)
+      .get();
+    if (!discountSnap.empty) {
+      const discountDoc = discountSnap.docs[0];
+      const dd = discountDoc.data();
+      const now = new Date();
+      const expired = dd.expiresAt && dd.expiresAt.toDate() < now;
+      const exhausted = dd.maxUses !== null && dd.usedCount >= dd.maxUses;
+      if (!expired && !exhausted) {
+        discountPercent = Number(dd.discountPercent ?? 0);
+        appliedDiscountCode = rawDiscountCode;
+        discountDocId = discountDoc.id;
+      }
+    }
+  }
+
+  const consultationFee = discountPercent > 0
+    ? Math.round(baseFee * (1 - discountPercent / 100))
+    : baseFee;
 
   let caseId = existingCaseId;
   let clientEmail: string | null = null;
@@ -134,6 +179,7 @@ export async function POST(request: NextRequest) {
         currency,
         attemptCount: 0,
         initiatedAt: FieldValue.serverTimestamp(),
+        ...(appliedDiscountCode ? { discountCode: appliedDiscountCode, discountPercent } : {}),
       },
     });
 
@@ -167,7 +213,7 @@ export async function POST(request: NextRequest) {
       items: [
         {
           name: 'Real Estate Consultation',
-          description: 'Privara Estate consultation fee',
+          description: 'Real Real Estate consultation fee',
           count: 1,
           price: Number(consultationFee.toFixed(2)),
         },
@@ -238,7 +284,7 @@ export async function POST(request: NextRequest) {
 
   // update() with dot notation preserves all existing payment subfields (amount, currency,
   // initiatedAt, provider, etc.) and correctly handles FieldValue.increment.
-  await adminDb.collection('consultations').doc(caseId!).update({
+  const updates: Record<string, unknown> = {
     'payment.status': 'session_created',
     'payment.geideaSessionId': sessionId,
     'payment.responseCode': geideaData.responseCode,
@@ -247,7 +293,19 @@ export async function POST(request: NextRequest) {
     'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
     'payment.attemptCount': FieldValue.increment(1),
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  if (appliedDiscountCode) {
+    updates['payment.discountCode'] = appliedDiscountCode;
+    updates['payment.discountPercent'] = discountPercent;
+  }
+  await adminDb.collection('consultations').doc(caseId!).update(updates);
+
+  // Atomically increment discount usedCount so the code cannot be over-redeemed
+  if (discountDocId) {
+    await adminDb.collection('discountCodes').doc(discountDocId).update({
+      usedCount: FieldValue.increment(1),
+    });
+  }
 
   return NextResponse.json({
     sessionId,

@@ -12,12 +12,11 @@ service firebase.storage {
     }
 
     function isConsultationParticipant(caseId) {
-      // Use firestore.get to check if the user is a participant in the consultation
-      let consultation = firestore.get(/databases/(default)/documents/consultations/$(caseId));
-      return consultation != null && (
-        consultation.data.clientId == request.auth.uid ||
-        consultation.data.consultantId == request.auth.uid ||
-        consultation.data.qualitySpecialistId == request.auth.uid ||
+      // firestore.get() throws on a missing document; guard with exists() first
+      return firestore.exists(/databases/(default)/documents/consultations/$(caseId)) && (
+        firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.clientId == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.qualitySpecialistId == request.auth.uid ||
         isAdmin()
       );
     }
@@ -33,7 +32,8 @@ service firebase.storage {
       allow read: if isAuthenticated() && isConsultationParticipant(caseId);
       allow write: if isAuthenticated() && (
         isAdmin() ||
-        (firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
+        (firestore.exists(/databases/(default)/documents/consultations/$(caseId)) &&
+         firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
       ) && request.resource.size < 10 * 1024 * 1024 && request.resource.contentType == 'application/pdf';
     }
 
@@ -41,7 +41,8 @@ service firebase.storage {
       allow read: if isAuthenticated() && isConsultationParticipant(caseId);
       allow write: if isAuthenticated() && (
         isAdmin() ||
-        (firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
+        (firestore.exists(/databases/(default)/documents/consultations/$(caseId)) &&
+         firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
       ) && request.resource.size < 250 * 1024 * 1024 && (request.resource.contentType.matches('video/.*') || request.resource.contentType.matches('audio/.*'));
     }
     

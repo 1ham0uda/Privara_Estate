@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Bell, Check, ExternalLink, Loader2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, ExternalLink, Loader2 } from 'lucide-react';
 import { notificationService } from '@/src/lib/db';
 import { AppNotification } from '@/src/types';
 import { useAuth } from '@/src/context/AuthContext';
@@ -41,25 +41,22 @@ export default function NotificationDropdown() {
     await notificationService.markAsRead(id);
   };
 
-  useEffect(() => {
-    if (isOpen && unreadCount > 0) {
-      notifications.forEach(n => {
-        if (!n.read) {
-          handleMarkAsRead(n.id);
-        }
-      });
-    }
-  }, [isOpen, unreadCount, notifications]);
+  const handleMarkAllAsRead = async () => {
+    await Promise.all(notifications.filter(n => !n.read).map(n => notificationService.markAsRead(n.id)));
+  };
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-gray-600 hover:text-black transition-colors rounded-full hover:bg-gray-100"
+        className="relative p-2 text-brand-slate hover:text-ink transition-colors rounded-full hover:bg-soft-blue"
+        aria-label={unreadCount > 0 ? `${t('notifications.title')} — ${unreadCount} ${t('notifications.new')}` : t('notifications.title')}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white" aria-hidden="true">
             {unreadCount}
           </span>
         )}
@@ -68,68 +65,74 @@ export default function NotificationDropdown() {
       <AnimatePresence>
         {isOpen && (
           <>
-            <div 
-              className="fixed inset-0 z-40" 
-              onClick={() => setIsOpen(false)} 
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setIsOpen(false)}
             />
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute z-50 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden right-0"
+              className="absolute z-50 mt-2 w-80 bg-white rounded-xl shadow-xl border border-soft-blue overflow-hidden right-0"
             >
-              <div className="p-4 border-b border-gray-50 flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">
+              <div className={`p-4 border-b border-soft-blue flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <h3 className="font-semibold text-ink">
                   {t('notifications.title')}
                 </h3>
                 {unreadCount > 0 && (
-                  <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">
-                    {unreadCount} {t('notifications.new')}
-                  </span>
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                    aria-label={t('notifications.mark_all_read') || 'Mark all as read'}
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                    {t('notifications.mark_all_read') || 'Mark all read'}
+                  </button>
                 )}
               </div>
 
               <div className="max-h-96 overflow-y-auto">
                 {loading ? (
                   <div className="p-8 flex justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                    <Loader2 className="w-6 h-6 animate-spin text-brand-slate" />
                   </div>
                 ) : notifications.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500 text-sm">
+                  <div className="p-8 text-center text-brand-slate text-sm">
                     {t('notifications.none')}
                   </div>
                 ) : (
                   notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className={`p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors relative ${!notification.read ? 'bg-indigo-50/30' : ''}`}
+                      className={`p-4 border-b border-soft-blue hover:bg-cloud transition-colors relative ${!notification.read ? 'bg-soft-blue/50' : ''}`}
                     >
-                      <div className="flex justify-between items-start gap-2">
+                      <div className={`flex justify-between items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                         <div className={`flex-1 ${isRTL ? 'text-right' : 'text-left'}`}>
-                          <p className="text-sm font-medium text-gray-900">{resolveNotificationText(notification, 'title')}</p>
-                          <p className="text-xs text-gray-600 mt-1">{resolveNotificationText(notification, 'message')}</p>
+                          <p className="text-sm font-medium text-ink">{resolveNotificationText(notification, 'title')}</p>
+                          <p className="text-xs text-brand-slate mt-1">{resolveNotificationText(notification, 'message')}</p>
                           {notification.link && (
-                            <Link 
+                            <Link
                               href={notification.link}
                               onClick={() => setIsOpen(false)}
-                              className="text-xs text-indigo-600 font-medium mt-2 flex items-center gap-1 hover:underline"
+                              className={`text-xs text-blue-600 font-medium mt-2 flex items-center gap-1 hover:underline ${isRTL ? 'flex-row-reverse' : ''}`}
                             >
                               {t('notifications.view_details')}
-                              <ExternalLink className="w-3 h-3" />
+                              <ExternalLink className="w-3 h-3" aria-hidden="true" />
                             </Link>
                           )}
                         </div>
                         {!notification.read && (
                           <button
                             onClick={() => handleMarkAsRead(notification.id)}
-                            className="p-1 text-indigo-600 hover:bg-indigo-100 rounded-full transition-colors"
+                            className="p-1 text-blue-600 hover:bg-soft-blue rounded-full transition-colors shrink-0"
+                            aria-label={t('notifications.mark_as_read')}
                             title={t('notifications.mark_as_read')}
                           >
-                            <Check className="w-4 h-4" />
+                            <Check className="w-4 h-4" aria-hidden="true" />
                           </button>
                         )}
                       </div>
-                      <p className={`text-[10px] text-gray-400 mt-2 ${isRTL ? 'text-left' : 'text-right'}`}>
+                      <p className={`text-[10px] text-brand-slate mt-2 ${isRTL ? 'text-left' : 'text-right'}`}>
                         {notification.createdAt?.toDate ? new Date(notification.createdAt.toDate()).toLocaleString(language) : ''}
                       </p>
                     </div>

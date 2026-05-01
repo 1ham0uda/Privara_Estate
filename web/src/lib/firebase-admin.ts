@@ -50,3 +50,4 @@ export function getAdminDb() {
   ensureAdminApp();
   return admin.firestore();
 }
+export const getAdminFirestore = getAdminDb;

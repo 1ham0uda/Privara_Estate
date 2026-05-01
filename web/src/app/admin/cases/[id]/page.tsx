@@ -76,7 +76,7 @@ export default function AdminCaseDetails() {
 
   const handleAssignQuality = async () => {
     if (!selectedQualityId) {
-      toast.error('Please select a quality specialist');
+      toast.error(t('admin.case_details.select_quality_first'));
       return;
     }
 
@@ -90,12 +90,12 @@ export default function AdminCaseDetails() {
         selectedQualityId,
         specialist.displayName || 'Quality Specialist'
       );
-      toast.success('Quality specialist assigned successfully');
-      
+      toast.success(t('admin.dashboard.case.reassigned_success'));
+
       const updated = await consultationService.getConsultation(caseId as string);
       setConsultation(updated);
     } catch (error) {
-      toast.error('Failed to assign quality specialist');
+      toast.error(t('admin.case_details.assign_quality_failed'));
     } finally {
       setIsAssigningQuality(false);
     }
@@ -103,7 +103,7 @@ export default function AdminCaseDetails() {
 
   const handleReassign = async (requestId?: string) => {
     if (!selectedConsultantId) {
-      toast.error('Please select a consultant');
+      toast.error(t('admin.case_details.select_consultant_first'));
       return;
     }
 
@@ -118,7 +118,7 @@ export default function AdminCaseDetails() {
         newConsultant.name,
         requestId
       );
-      toast.success('Consultant reassigned successfully');
+      toast.success(t('admin.dashboard.case.reassigned_success'));
       
       const updated = await consultationService.getConsultation(caseId as string);
       setConsultation(updated);
@@ -129,7 +129,7 @@ export default function AdminCaseDetails() {
       const updatedRequests = await consultationService.getChangeRequests(caseId as string);
       setChangeRequests(updatedRequests);
     } catch (error) {
-      toast.error('Failed to reassign consultant');
+      toast.error(t('admin.case_details.reassign_failed'));
     } finally {
       setIsReassigning(false);
     }
@@ -153,7 +153,7 @@ export default function AdminCaseDetails() {
   if (authLoading || !consultation) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <Toaster />
       
@@ -161,7 +161,7 @@ export default function AdminCaseDetails() {
         <div className={`flex items-center justify-between mb-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
           <button 
             onClick={() => router.back()} 
-            className={`flex items-center text-gray-500 hover:text-black transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
+            className={`flex items-center text-brand-slate hover:text-ink transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
           >
             <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} /> {t('common.back')}
           </button>
@@ -176,10 +176,10 @@ export default function AdminCaseDetails() {
                     <Badge variant="info" className="uppercase tracking-wider">
                       {t(`case.status.${consultation.status}`)}
                     </Badge>
-                    <span className="text-sm text-gray-400">{t('dashboard.case_number')}{consultation.id.slice(-6)}</span>
+                    <span className="text-sm text-brand-slate">{t('dashboard.case_number')}{consultation.id.slice(-6)}</span>
                   </div>
-                  <h1 className="text-3xl font-bold text-gray-900">{t('admin.case_details.overview')}</h1>
-                  <p className="text-gray-500">{t('admin.case_details.overview_subtitle')}</p>
+                  <h1 className="text-3xl font-bold text-ink">{t('admin.case_details.overview')}</h1>
+                  <p className="text-brand-slate">{t('admin.case_details.overview_subtitle')}</p>
                 </div>
                 <Link href={`/cases/${caseId}/chat`}>
                   <Button variant="outline" className={`h-12 rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -188,17 +188,17 @@ export default function AdminCaseDetails() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-6 border-t border-gray-100">
-                <div className={`p-4 bg-gray-50 rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('dashboard.status')}</p>
-                  <p className="font-bold text-gray-900 capitalize">{t(`case.status.${consultation.status}`)}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-6 border-t border-soft-blue">
+                <div className={`p-4 bg-cloud rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <p className="text-xs font-bold text-brand-slate uppercase mb-1">{t('dashboard.status')}</p>
+                  <p className="font-bold text-ink capitalize">{t(`case.status.${consultation.status}`)}</p>
                 </div>
-                <div className={`p-4 bg-gray-50 rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('dashboard.stage')}</p>
-                  <p className="font-bold text-gray-900 capitalize">{t(`dashboard.stage_${consultation.stage}`)}</p>
+                <div className={`p-4 bg-cloud rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <p className="text-xs font-bold text-brand-slate uppercase mb-1">{t('dashboard.stage')}</p>
+                  <p className="font-bold text-ink capitalize">{t(`dashboard.stage_${consultation.stage}`)}</p>
                 </div>
-                <div className={`p-4 bg-gray-50 rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-1">{t('dashboard.payment_status')}</p>
+                <div className={`p-4 bg-cloud rounded-xl ${isRTL ? 'text-right' : 'text-left'}`}>
+                  <p className="text-xs font-bold text-brand-slate uppercase mb-1">{t('dashboard.payment_status')}</p>
                   <p className={`font-bold capitalize ${consultation.paymentStatus === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>{t(`payment.status.${consultation.paymentStatus}`)}</p>
                   {consultation.paymentStatus !== 'paid' ? (
                     <Button size="sm" className="mt-3 w-full text-xs" onClick={handleMarkPaymentPaid} loading={isMarkingPaid}>
@@ -222,17 +222,17 @@ export default function AdminCaseDetails() {
                         <AlertCircle className="w-6 h-6 text-rose-600" />
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500 mb-1">{t('admin.case_details.reason_for_request')}</p>
-                        <p className="text-gray-900 font-medium italic">&quot;{request.reason}&quot;</p>
-                        <p className="text-xs text-gray-400 mt-2">{t('admin.case_details.requested_on')} {formatDate(request.createdAt, language)}</p>
+                        <p className="text-sm text-brand-slate mb-1">{t('admin.case_details.reason_for_request')}</p>
+                        <p className="text-ink font-medium italic">&quot;{request.reason}&quot;</p>
+                        <p className="text-xs text-brand-slate mt-2">{t('admin.case_details.requested_on')} {formatDate(request.createdAt, language)}</p>
                       </div>
                     </div>
 
                     <div className={`flex flex-col md:flex-row gap-4 items-end ${isRTL ? 'md:flex-row-reverse' : ''}`}>
                       <div className={`flex-1 w-full ${isRTL ? 'text-right' : ''}`}>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-2">{t('admin.case_details.select_new_consultant')}</label>
+                        <label className="block text-xs font-bold text-brand-slate uppercase mb-2">{t('admin.case_details.select_new_consultant')}</label>
                         <select 
-                          className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-black outline-none"
+                          className="w-full h-12 px-4 rounded-xl border border-soft-blue bg-white focus:ring-2 focus:ring-blue-600 outline-none"
                           value={selectedConsultantId}
                           onChange={(e) => setSelectedConsultantId(e.target.value)}
                           dir={isRTL ? 'rtl' : 'ltr'}
@@ -260,39 +260,39 @@ export default function AdminCaseDetails() {
 
             <section>
               <h2 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <FileText className="w-5 h-5 text-gray-400" /> {t('admin.case_details.intake_info')}
+                <FileText className="w-5 h-5 text-brand-slate" /> {t('admin.case_details.intake_info')}
               </h2>
               <Card className="p-8 border-none shadow-sm" hover={false}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-sm text-gray-500">{t('admin.case_details.goal')}</span>
+                      <span className="text-sm text-brand-slate">{t('admin.case_details.goal')}</span>
                       <span className="text-sm font-bold capitalize">{t(`intake.goal_${consultation.intake.goal}`)}</span>
                     </div>
                     <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-sm text-gray-500">{t('admin.case_details.preferred_area')}</span>
+                      <span className="text-sm text-brand-slate">{t('admin.case_details.preferred_area')}</span>
                       <span className="text-sm font-bold">{consultation.intake.preferredArea}</span>
                     </div>
                     <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-sm text-gray-500">{t('admin.case_details.budget_range')}</span>
+                      <span className="text-sm text-brand-slate">{t('admin.case_details.budget_range')}</span>
                       <span className="text-sm font-bold">{consultation.intake.budgetRange}</span>
                     </div>
                   </div>
                   <div className="space-y-4">
                     <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-sm text-gray-500">{t('admin.case_details.property_type')}</span>
+                      <span className="text-sm text-brand-slate">{t('admin.case_details.property_type')}</span>
                       <span className="text-sm font-bold">{consultation.intake.propertyType}</span>
                     </div>
                     <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-sm text-gray-500">{t('admin.case_details.delivery_time')}</span>
+                      <span className="text-sm text-brand-slate">{t('admin.case_details.delivery_time')}</span>
                       <span className="text-sm font-bold">{consultation.intake.preferredDeliveryTime}</span>
                     </div>
                   </div>
                 </div>
                 {consultation.intake.notes && (
-                  <div className="mt-8 pt-8 border-t border-gray-100">
-                    <p className={`text-sm text-gray-500 mb-2 font-bold uppercase ${isRTL ? 'text-right' : ''}`}>{t('admin.case_details.additional_notes')}</p>
-                    <p className={`text-sm text-gray-600 italic ${isRTL ? 'text-right' : ''}`}>&quot;{consultation.intake.notes}&quot;</p>
+                  <div className="mt-8 pt-8 border-t border-soft-blue">
+                    <p className={`text-sm text-brand-slate mb-2 font-bold uppercase ${isRTL ? 'text-right' : ''}`}>{t('admin.case_details.additional_notes')}</p>
+                    <p className={`text-sm text-brand-slate italic ${isRTL ? 'text-right' : ''}`}>&quot;{consultation.intake.notes}&quot;</p>
                   </div>
                 )}
               </Card>
@@ -314,10 +314,10 @@ export default function AdminCaseDetails() {
                           </Badge>
                           <Badge variant="info">{t('dashboard.meeting_recorded')}: {report.meetingStatus.replace('-', ' ')}</Badge>
                         </div>
-                        <span className="text-xs text-gray-400">{formatDate(report.createdAt, language)}</span>
+                        <span className="text-xs text-brand-slate">{formatDate(report.createdAt, language)}</span>
                       </div>
-                      <p className={`text-sm text-gray-700 whitespace-pre-wrap mb-4 ${isRTL ? 'text-right' : ''}`}>{report.notes}</p>
-                      <div className={`flex items-center gap-2 text-[10px] text-gray-400 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <p className={`text-sm text-brand-slate whitespace-pre-wrap mb-4 ${isRTL ? 'text-right' : ''}`}>{report.notes}</p>
+                      <div className={`flex items-center gap-2 text-[10px] text-brand-slate ${isRTL ? 'flex-row-reverse' : ''}`}>
                         <Shield className="w-3 h-3" /> {t('admin.case_details.audited_by')}: {report.specialistName}
                       </div>
                     </Card>
@@ -332,22 +332,22 @@ export default function AdminCaseDetails() {
               <h2 className={`text-xl font-bold mb-6 ${isRTL ? 'text-right' : ''}`}>{t('admin.case_details.participants')}</h2>
               <Card className="p-6 border-none shadow-sm space-y-6" hover={false}>
                 <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                  <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
-                    <User className="w-6 h-6 text-gray-300" />
+                  <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                    <User className="w-6 h-6 text-brand-slate/40" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 font-bold uppercase">{t('admin.case_details.client')}</p>
+                    <p className="text-xs text-brand-slate font-bold uppercase">{t('admin.case_details.client')}</p>
                     <p className="font-bold">{client?.displayName || consultation.clientName || t('common.loading')}</p>
-                    <p className="text-xs text-gray-500">{client?.email}</p>
+                    <p className="text-xs text-brand-slate">{client?.email}</p>
                   </div>
                 </div>
                 {consultation.intake.selectedConsultantName ? (
-                  <div className={`flex items-center gap-4 pt-6 border-t border-gray-100 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+                  <div className={`flex items-center gap-4 pt-6 border-t border-soft-blue ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
                     <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
                       <User className="w-6 h-6 text-blue-400" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs text-gray-400 font-bold uppercase">{t('intake.requested_consultant_label')}</p>
+                      <p className="text-xs text-brand-slate font-bold uppercase">{t('intake.requested_consultant_label')}</p>
                       <p className="font-bold">{consultation.intake.selectedConsultantName}</p>
                       <div className={`mt-2 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                         {consultation.intake.selectedConsultantUid ? (
@@ -362,31 +362,31 @@ export default function AdminCaseDetails() {
                     </div>
                   </div>
                 ) : null}
-                <div className={`flex items-center gap-4 pt-6 border-t border-gray-100 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                  <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
-                    <User className="w-6 h-6 text-gray-300" />
+                <div className={`flex items-center gap-4 pt-6 border-t border-soft-blue ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+                  <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                    <User className="w-6 h-6 text-brand-slate/40" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 font-bold uppercase">{t('admin.case_details.assigned_consultant')}</p>
+                    <p className="text-xs text-brand-slate font-bold uppercase">{t('admin.case_details.assigned_consultant')}</p>
                     <p className="font-bold">{consultant?.displayName || consultation.consultantName || t('dashboard.unassigned')}</p>
-                    <p className="text-xs text-gray-500">{consultant?.email || 'N/A'}</p>
+                    <p className="text-xs text-brand-slate">{consultant?.email || 'N/A'}</p>
                   </div>
                 </div>
-                <div className={`flex items-center gap-4 pt-6 border-t border-gray-100 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                  <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
-                    <Shield className="w-6 h-6 text-gray-300" />
+                <div className={`flex items-center gap-4 pt-6 border-t border-soft-blue ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+                  <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-brand-slate/40" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs text-gray-400 font-bold uppercase">{t('admin.case_details.quality_specialist')}</p>
+                    <p className="text-xs text-brand-slate font-bold uppercase">{t('admin.case_details.quality_specialist')}</p>
                     {consultation.qualitySpecialistId ? (
                       <>
                         <p className="font-bold">{consultation.qualitySpecialistName}</p>
-                        <p className="text-xs text-gray-500">{allQuality.find(q => q.uid === consultation.qualitySpecialistId)?.email || 'N/A'}</p>
+                        <p className="text-xs text-brand-slate">{allQuality.find(q => q.uid === consultation.qualitySpecialistId)?.email || 'N/A'}</p>
                       </>
                     ) : (
                       <div className="mt-2 space-y-2">
                         <select 
-                          className="w-full text-xs p-2 rounded-lg border border-gray-200"
+                          className="w-full text-xs p-2 rounded-lg border border-soft-blue"
                           value={selectedQualityId}
                           onChange={(e) => setSelectedQualityId(e.target.value)}
                           dir={isRTL ? 'rtl' : 'ltr'}
@@ -419,7 +419,7 @@ export default function AdminCaseDetails() {
                     <div className={`w-2 h-2 rounded-full mt-1.5 ${consultation.paymentStatus === 'paid' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                     <div className="text-xs">
                       <p className="font-bold">{consultation.paymentStatus === 'paid' ? t('admin.case_details.payment_confirmed') : t('admin.case_details.payment_pending')}</p>
-                      <p className="text-gray-400">{formatDate(consultation.createdAt, language)}</p>
+                      <p className="text-brand-slate">{formatDate(consultation.createdAt, language)}</p>
                     </div>
                   </div>
                   {consultation.consultantId && (
@@ -427,7 +427,7 @@ export default function AdminCaseDetails() {
                       <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5" />
                       <div className="text-xs">
                         <p className="font-bold">{t('admin.case_details.consultant_assigned')}</p>
-                        <p className="text-gray-400">{formatDate(consultation.updatedAt, language)}</p>
+                        <p className="text-brand-slate">{formatDate(consultation.updatedAt, language)}</p>
                       </div>
                     </div>
                   )}

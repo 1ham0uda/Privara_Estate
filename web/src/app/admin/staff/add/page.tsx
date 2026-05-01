@@ -47,7 +47,6 @@ export default function AddStaffPage() {
 
   const [formData, setFormData] = useState({
     email: '',
-    password: '',
     displayName: '',
     role: 'consultant' as StaffRole,
     specialties: '',
@@ -86,7 +85,7 @@ export default function AddStaffPage() {
 
       const idToken = await currentUser.getIdToken();
       const normalizedRole = formData.role;
-      const normalizedExperience = formData.experienceYears.trim();
+      const normalizedExperience = (formData.experienceYears ?? '').trim();
       const parsedExperience = normalizedExperience === '' ? 0 : Number(normalizedExperience);
 
       if (!staffRoleOptions.includes(normalizedRole)) {
@@ -103,7 +102,6 @@ export default function AddStaffPage() {
 
       const payload = {
         email: formData.email.trim().toLowerCase(),
-        password: formData.password,
         displayName: formData.displayName.trim(),
         role: normalizedRole,
         specialties: normalizedRole === 'consultant' ? formData.specialties : '',
@@ -136,7 +134,7 @@ export default function AddStaffPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex items-center gap-4 mb-8">
@@ -144,15 +142,15 @@ export default function AddStaffPage() {
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">{t('admin.staff.add.title')}</h1>
-            <p className="text-sm text-gray-500 mt-1">{t('admin.staff.add.subtitle')}</p>
+            <h1 className="text-3xl font-bold tracking-tight text-ink">{t('admin.staff.add.title')}</h1>
+            <p className="text-sm text-brand-slate mt-1">{t('admin.staff.add.subtitle')}</p>
           </div>
         </div>
 
         <Card className="p-6 bg-white shadow-sm" hover={false}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.name')}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{t('admin.dashboard.modal.addUser.name')}</label>
               <Input
                 value={formData.displayName}
                 onChange={(e: any) => setFormData({ ...formData, displayName: e.target.value })}
@@ -161,7 +159,7 @@ export default function AddStaffPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.email')}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{t('admin.dashboard.modal.addUser.email')}</label>
               <Input
                 type="email"
                 value={formData.email}
@@ -171,19 +169,11 @@ export default function AddStaffPage() {
                 dir="ltr"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.password')}</label>
-              <Input
-                type="password"
-                value={formData.password}
-                onChange={(e: any) => setFormData({ ...formData, password: e.target.value })}
-                required
-                placeholder={t('auth.password_placeholder')}
-              />
-              <p className="text-xs text-gray-500 mt-1">{t('admin.staff.add.password_hint')}</p>
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+              <p className="text-xs text-blue-700">{t('admin.staff.add.email_sent_hint')}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.phone')}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{t('admin.dashboard.modal.addUser.phone')}</label>
               <Input
                 type="tel"
                 value={formData.phoneNumber}
@@ -193,7 +183,7 @@ export default function AddStaffPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{getExperienceLabel()}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{getExperienceLabel()}</label>
               <Input
                 type="number"
                 min="0"
@@ -203,11 +193,11 @@ export default function AddStaffPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.staff.add.role_label')}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{t('admin.staff.add.role_label')}</label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value as StaffRole })}
-                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all text-sm"
+                className="w-full px-4 py-3 bg-cloud border-2 border-soft-blue rounded-xl focus:border-blue-600 focus:outline-none transition-all text-sm"
               >
                 {roleOptions.map((roleOption) => (
                   <option key={roleOption.value} value={roleOption.value}>
@@ -220,7 +210,7 @@ export default function AddStaffPage() {
             {formData.role === 'consultant' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.specialties')}</label>
+                  <label className="block text-sm font-medium text-ink mb-1">{t('admin.dashboard.modal.addUser.specialties')}</label>
                   <Input
                     value={formData.specialties}
                     onChange={(e: any) => setFormData({ ...formData, specialties: e.target.value })}
@@ -228,11 +218,11 @@ export default function AddStaffPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.dashboard.modal.addUser.bio')}</label>
+                  <label className="block text-sm font-medium text-ink mb-1">{t('admin.dashboard.modal.addUser.bio')}</label>
                   <textarea
                     value={formData.bio}
                     onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-black focus:outline-none transition-all text-sm"
+                    className="w-full px-4 py-3 bg-cloud border-2 border-soft-blue rounded-xl focus:border-blue-600 focus:outline-none transition-all text-sm"
                     rows={4}
                     placeholder={t('admin.staff.add.bio_placeholder')}
                   />

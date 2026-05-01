@@ -135,7 +135,7 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
-        hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt', 'avatarUrl', 'status', 'phoneNumber', 'location', 'specialties', 'experienceYears', 'rating', 'bio', 'totalConsultations', 'activeConsultations', 'completedConsultations']) &&
+        hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'createdAt', 'avatarUrl', 'status', 'phoneNumber', 'location', 'specialties', 'experienceYears', 'rating', 'bio', 'totalConsultations', 'activeConsultations', 'completedConsultations', 'notificationPreferences', 'fcmTokens', 'referralCode', 'referredBy', 'referralCount', 'whatsappOptIn', 'whatsappNumber', 'organizationId']) &&
         (isAdmin() || (data.uid == request.auth.uid && data.email == request.auth.token.email)) &&
         isValidEmail(data.email) &&
         data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
@@ -190,7 +190,11 @@ service cloud.firestore {
         (!('imageUrl' in data) || data.imageUrl == null || data.imageUrl == "" || isValidUrl(data.imageUrl)) &&
         (!('audioUrl' in data) || data.audioUrl == null || data.audioUrl == "" || isValidUrl(data.audioUrl)) &&
         (!('type' in data) || data.type in ['text', 'image', 'audio', 'meeting_request', 'meeting_link', 'call_log']) &&
-        data.createdAt is timestamp;
+        data.createdAt is timestamp &&
+        // At least one of text, image, or audio must be present — no genuinely empty messages
+        (data.text.size() > 0 ||
+          ('imageUrl' in data && data.imageUrl != null && data.imageUrl != "") ||
+          ('audioUrl' in data && data.audioUrl != null && data.audioUrl != ""));
     }
 
     function isValidAuditReport(data) {
@@ -423,17 +427,11 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    match /test/connection {
-      allow read: if true;
-    }
-
     match /users/{userId} {
       allow read: if isAuthenticated() && (
-        isOwner(userId) || 
-        isAdmin() || 
-        resource.data.email == request.auth.token.email || 
-        resource.data.role == 'admin' || 
-        resource.data.role == 'quality'
+        isOwner(userId) ||
+        isAdmin() ||
+        resource.data.role == 'admin'   // any auth user may read admin profiles for notification fan-out
       );
       allow create: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == 'client' || isAdmin());
       allow update: if (isOwner(userId) || isAdmin()) && 
@@ -487,9 +485,10 @@ service cloud.firestore {
 
     match /auditReports/{reportId} {
       allow read: if isAuthenticated() && (
-        isAdmin() || 
+        isAdmin() ||
+        isQuality() ||   // quality specialists see all reports (subscribeToAuditReports uses no filter)
         request.auth.uid == resource.data.specialistId ||
-        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) && 
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
          get(/databases/$(database)/documents/consultations/$(resource.data.caseId)).data.qualitySpecialistId == request.auth.uid)
       );
       allow create: if isQuality() && isValidAuditReport(request.resource.data);
@@ -556,17 +555,54 @@ service cloud.firestore {
       match /callerCandidates/{candidateId} {
         allow read: if isAuthenticated() && isCallParticipant(callId);
         allow create: if isAuthenticated() && isCallParticipant(callId) && isValidCallCandidate(request.resource.data);
+        allow delete: if isAuthenticated() && isCallParticipant(callId);  // cleanupIceCandidates after call ends
       }
 
       match /calleeCandidates/{candidateId} {
         allow read: if isAuthenticated() && isCallParticipant(callId);
         allow create: if isAuthenticated() && isCallParticipant(callId) && isValidCallCandidate(request.resource.data);
+        allow delete: if isAuthenticated() && isCallParticipant(callId);  // cleanupIceCandidates after call ends
       }
     }
 
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // discountCodes: admin manages; authenticated users may read active codes for
+    // client-side preview only (server always re-validates before charging).
+    match /discountCodes/{codeId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.active == true);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // referrals: written by the /api/referral/track server route (Admin SDK, bypasses rules).
+    // The referred user may read their own referral record; admins see all.
+    match /referrals/{referralId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.referredUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // auditLog is written exclusively by server-side Admin SDK (bypasses rules).
+    // Clients may only read as admins; all client writes are denied.
+    match /auditLog/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // organizations: multi-tenant foundation.
+    // Owner and members may read; only the owner may update.
+    // Creation and deletion reserved for admin (or future server route).
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerUid == request.auth.uid ||
+        request.auth.uid in resource.data.memberUids
+      );
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.ownerUid == request.auth.uid);
+      allow delete: if isAdmin();
     }
   }
 }

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { consultationService, qualityService } from '@/src/lib/db';
 import { ConsultationCase, QualityAuditReport } from '@/src/types';
-import { Card, Badge, Button } from '@/src/components/UI';
+import { Card, Badge, Button, Skeleton, SkeletonCard } from '@/src/components/UI';
 import { 
   ClipboardCheck, 
   MessageSquare, 
@@ -49,8 +49,16 @@ export default function QualityDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-cloud">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="h-16 bg-white border-b border-soft-blue px-6 flex items-center"><Skeleton className="h-6 w-32" /></div>
+        <div className="max-w-5xl mx-auto px-4 py-10 space-y-6">
+          <Skeleton className="h-8 w-56" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[1,2,3].map(i => <SkeletonCard key={i} lines={2} />)}
+          </div>
+          <SkeletonCard lines={6} />
+          <SkeletonCard lines={4} />
+        </div>
       </div>
     );
   }
@@ -112,7 +120,7 @@ export default function QualityDashboard() {
           
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full md:w-auto">
             <div className="relative w-full sm:w-auto">
-              <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 ${isRTL ? 'right-3' : 'left-3'}`} />
+              <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 text-brand-slate ${isRTL ? 'right-3' : 'left-3'}`} />
               <input 
                 type="text"
                 placeholder={t('quality.search_placeholder')}
@@ -144,7 +152,7 @@ export default function QualityDashboard() {
                 <ClipboardCheck className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('quality.stats_assigned')}</p>
+                <p className="text-sm text-brand-slate">{t('quality.stats_assigned')}</p>
                 <p className="text-2xl font-bold">{cases.length}</p>
               </div>
             </div>
@@ -155,7 +163,7 @@ export default function QualityDashboard() {
                 <Clock className="w-6 h-6 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('quality.stats_pending')}</p>
+                <p className="text-sm text-brand-slate">{t('quality.stats_pending')}</p>
                 <p className="text-2xl font-bold">{cases.filter(c => !reports[c.id] || reports[c.id].length === 0).length}</p>
               </div>
             </div>
@@ -166,7 +174,7 @@ export default function QualityDashboard() {
                 <CheckCircle2 className="w-6 h-6 text-emerald-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('quality.stats_completed')}</p>
+                <p className="text-sm text-brand-slate">{t('quality.stats_completed')}</p>
                 <p className="text-2xl font-bold">{Object.values(reports).flat().length}</p>
               </div>
             </div>
@@ -188,15 +196,15 @@ export default function QualityDashboard() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold text-lg text-gray-900">{c.clientName}</h3>
+                          <h3 className="font-bold text-lg text-ink">{c.clientName}</h3>
                           <Badge variant={isAudited ? 'success' : 'warning'} className="text-[10px] uppercase">
                             {isAudited ? t('quality.case_audited') : t('quality.case_pending')}
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-500 mb-2">
-                          {t('quality.consultant')}: <span className="font-medium text-gray-700">{c.consultantName}</span>
+                        <p className="text-sm text-brand-slate mb-2">
+                          {t('quality.consultant')}: <span className="font-medium text-ink">{c.consultantName}</span>
                         </p>
-                        <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                        <div className="flex flex-wrap gap-4 text-xs text-brand-slate">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {formatDate(c.createdAt, language)}
                           </span>
@@ -226,9 +234,9 @@ export default function QualityDashboard() {
               );
             })
           ) : (
-            <Card className="py-20 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-              <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-medium">{t('quality.no_cases')}</p>
+            <Card className="py-20 text-center bg-white border-dashed border-2 border-soft-blue" hover={false}>
+              <AlertCircle className="w-12 h-12 text-brand-slate/40 mx-auto mb-4" />
+              <p className="text-brand-slate font-medium">{t('quality.no_cases')}</p>
             </Card>
           )}
         </div>

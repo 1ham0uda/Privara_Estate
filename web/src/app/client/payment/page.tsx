@@ -21,6 +21,8 @@ import {
 import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
 import { useLanguage } from '@/src/context/LanguageContext';
+import { Tag, X as XIcon } from 'lucide-react';
+import { analyticsEvents } from '@/src/lib/analytics';
 
 declare global {
   interface Window {
@@ -49,8 +51,12 @@ export default function PaymentPage() {
   const [consultationFee, setConsultationFee] = useState(500);
   const [gatewayReady, setGatewayReady] = useState(false);
   const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
+  const [discountCode, setDiscountCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; percent: number } | null>(null);
+  const [validatingDiscount, setValidatingDiscount] = useState(false);
 
   useEffect(() => {
+    analyticsEvents.paymentPageViewed();
     const savedCaseId = sessionStorage.getItem('pending_case_id');
     if (savedCaseId) {
       setPendingCaseId(savedCaseId);
@@ -127,6 +133,35 @@ export default function PaymentPage() {
     payment.startPayment(sessionId);
   };
 
+  const effectiveFee = appliedDiscount
+    ? Math.round(consultationFee * (1 - appliedDiscount.percent / 100))
+    : consultationFee;
+
+  const handleApplyDiscount = async () => {
+    const code = discountCode.trim().toUpperCase();
+    if (!code) return;
+    setValidatingDiscount(true);
+    try {
+      const res = await fetch('/api/payments/validate-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setAppliedDiscount({ code: data.code, percent: data.discountPercent });
+        analyticsEvents.discountApplied(data.discountPercent);
+        toast.success(`${data.discountPercent}% discount applied!`);
+      } else {
+        toast.error(data.error === 'expired' ? 'Code has expired.' : data.error === 'exhausted' ? 'Code limit reached.' : 'Invalid discount code.');
+      }
+    } catch {
+      toast.error('Could not validate code. Please try again.');
+    } finally {
+      setValidatingDiscount(false);
+    }
+  };
+
   const handlePayment = async () => {
     if (!intakeData || !user) return;
     if (!gatewayReady) {
@@ -134,6 +169,7 @@ export default function PaymentPage() {
       return;
     }
 
+    analyticsEvents.paymentInitiated(effectiveFee, 'EGP');
     setProcessing(true);
     try {
       const idToken = await user.getIdToken();
@@ -147,6 +183,7 @@ export default function PaymentPage() {
           intake: pendingCaseId ? undefined : intakeData,
           caseId: pendingCaseId ?? undefined,
           language,
+          discountCode: appliedDiscount?.code ?? undefined,
         }),
       });
 
@@ -177,7 +214,7 @@ export default function PaymentPage() {
   if (loading || !profile || !intakeData) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Script
         src={CHECKOUT_SCRIPT_URL}
         strategy="afterInteractive"
@@ -195,41 +232,41 @@ export default function PaymentPage() {
           <div>
             <button
               onClick={() => router.back()}
-              className="flex items-center text-gray-500 hover:text-black mb-8 transition-colors"
+              className="flex items-center text-brand-slate hover:text-ink mb-8 transition-colors"
             >
               <ArrowLeft className={`w-4 h-4 ${isRTL ? 'ml-2 rotate-180' : 'mr-2'}`} />{' '}
               {t('payment.back_to_intake')}
             </button>
 
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">
+            <h1 className="text-3xl font-bold tracking-tight text-ink mb-8">
               {t('payment.title')}
             </h1>
 
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <div className="space-y-6">
-                <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                  <span className="text-gray-500">{t('payment.service')}</span>
+                <div className="flex justify-between items-center pb-6 border-b border-soft-blue">
+                  <span className="text-brand-slate">{t('payment.service')}</span>
                   <span className="font-bold">{t('payment.service_name')}</span>
                 </div>
 
-                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5">
+                <div className="rounded-2xl border border-soft-blue bg-cloud p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center border border-gray-100">
-                        <UserCheck className="w-5 h-5 text-gray-700" />
+                      <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center border border-soft-blue">
+                        <UserCheck className="w-5 h-5 text-ink" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">
+                        <p className="text-xs font-bold text-brand-slate uppercase mb-1">
                           {hasSelectedConsultant
                             ? t('intake.selected_consultant_label')
                             : t('payment.assignment_title')}
                         </p>
-                        <p className="font-bold text-gray-900">
+                        <p className="font-bold text-ink">
                           {hasSelectedConsultant
                             ? intakeData.selectedConsultantName
                             : t('payment.assign_later_title')}
                         </p>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <p className="text-sm text-brand-slate mt-1">
                           {hasSelectedConsultant
                             ? t('payment.selected_consultant_helper')
                             : t('payment.assign_later_desc')}
@@ -250,26 +287,68 @@ export default function PaymentPage() {
 
                 <div className="space-y-4">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">{t('intake.goal_label')}</span>
+                    <span className="text-brand-slate">{t('intake.goal_label')}</span>
                     <span className="font-medium capitalize">
                       {t(`intake.goal_${intakeData.goal}`)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">{t('intake.area_label')}</span>
+                    <span className="text-brand-slate">{t('intake.area_label')}</span>
                     <span className="font-medium">{intakeData.preferredArea}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">{t('intake.budget_label')}</span>
+                    <span className="text-brand-slate">{t('intake.budget_label')}</span>
                     <span className="font-medium">{intakeData.budgetRange}</span>
                   </div>
                 </div>
-                <div className="pt-6 border-t border-gray-100">
+                {/* Discount code */}
+                <div className="pt-4 border-t border-soft-blue">
+                  {appliedDiscount ? (
+                    <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm">
+                      <div className="flex items-center gap-2 text-emerald-700">
+                        <Tag className="w-4 h-4" />
+                        <span className="font-medium">{appliedDiscount.code}</span>
+                        <span>— {appliedDiscount.percent}% off</span>
+                      </div>
+                      <button
+                        onClick={() => setAppliedDiscount(null)}
+                        className="text-emerald-500 hover:text-emerald-700"
+                        aria-label="Remove discount"
+                      >
+                        <XIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={`flex gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <input
+                        type="text"
+                        value={discountCode}
+                        onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                        placeholder={t('payment.discount_placeholder') || 'Discount code'}
+                        className="flex-1 px-4 py-2.5 bg-cloud border-2 border-soft-blue rounded-xl text-sm focus:outline-none focus:border-blue-600 transition-all uppercase"
+                        onKeyDown={(e) => e.key === 'Enter' && handleApplyDiscount()}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={handleApplyDiscount}
+                        loading={validatingDiscount}
+                        disabled={!discountCode.trim()}
+                      >
+                        {t('payment.apply_discount') || 'Apply'}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-soft-blue">
                   <div className="flex justify-between items-center">
                     <span className="text-lg font-bold">{t('payment.total_amount')}</span>
                     <div className="text-right">
-                      <p className="text-2xl font-bold">{consultationFee.toLocaleString()} EGP</p>
-                      <p className="text-xs text-gray-400">{t('payment.one_time')}</p>
+                      {appliedDiscount && (
+                        <p className="text-sm text-brand-slate line-through">{consultationFee.toLocaleString()} EGP</p>
+                      )}
+                      <p className="text-2xl font-bold">{effectiveFee.toLocaleString()} EGP</p>
+                      <p className="text-xs text-brand-slate">{t('payment.one_time')}</p>
                     </div>
                   </div>
                 </div>
@@ -289,7 +368,7 @@ export default function PaymentPage() {
                   <CheckCircle2 className="w-10 h-10 text-emerald-600" />
                 </div>
                 <h2 className="text-2xl font-bold mb-2">{t('payment.success_title')}</h2>
-                <p className="text-gray-500">{t('payment.success_desc')}</p>
+                <p className="text-brand-slate">{t('payment.success_desc')}</p>
               </Card>
             ) : (
               <Card className="bg-white border-none shadow-xl p-8" hover={false}>
@@ -299,15 +378,15 @@ export default function PaymentPage() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="p-4 bg-gray-50 rounded-xl border-2 border-gray-100">
-                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">
+                  <div className="p-4 bg-cloud rounded-xl border-2 border-soft-blue">
+                    <p className="text-xs font-bold text-brand-slate uppercase mb-2">
                       {t('payment.simulated_title')}
                     </p>
-                    <p className="text-sm text-gray-600">{t('payment.simulated_desc')}</p>
+                    <p className="text-sm text-brand-slate">{t('payment.simulated_desc')}</p>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-xs text-gray-400 justify-center">
+                    <div className="flex items-center gap-2 text-xs text-brand-slate justify-center">
                       <Lock className="w-3 h-3" /> {t('payment.secure_ssl')}
                     </div>
                     <Button

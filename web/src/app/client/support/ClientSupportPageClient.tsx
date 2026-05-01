@@ -17,12 +17,12 @@ export default function ClientSupportPageClient({ initialTicketId = null }: Clie
   if (loading) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 py-12">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">{t('support.title')}</h1>
-          <p className="text-gray-500 mt-2">{t('support.page_description')}</p>
+          <h1 className="text-3xl font-bold text-ink">{t('support.title')}</h1>
+          <p className="text-brand-slate mt-2">{t('support.page_description')}</p>
         </div>
         <SupportWorkspace role="client" initialTicketId={initialTicketId} />
       </main>

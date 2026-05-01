@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/src/lib/firebase-admin';
+import { writeAuditLog } from '@/src/lib/auditLog';
 import {
   buildCallbackSignature,
   extractGeideaCallbackSummary,
   getGeideaConfig,
   isGeideaPaymentSuccessful,
 } from '@/src/lib/geidea';
+import { sendPaymentReceiptEmail } from '@/src/lib/emailService';
 
 async function createNotification(data: {
   userId: string;
@@ -193,6 +195,12 @@ export async function POST(request: NextRequest) {
       'payment.lastCallbackAt': FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    writeAuditLog({
+      action: 'payment_mismatch',
+      actorUid: null,
+      targetId: summary.merchantReferenceId,
+      metadata: { reason: 'amount_mismatch', expected: expectedAmount, received: summary.amount },
+    });
     return NextResponse.json({ received: true, status: 'mismatch_amount' }, { status: 200 });
   }
 
@@ -211,6 +219,12 @@ export async function POST(request: NextRequest) {
       'payment.callbackSummary': summary,
       'payment.lastCallbackAt': FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+    });
+    writeAuditLog({
+      action: 'payment_mismatch',
+      actorUid: null,
+      targetId: summary.merchantReferenceId,
+      metadata: { reason: 'currency_mismatch', expected: expectedCurrency, received: summary.currency },
     });
     return NextResponse.json({ received: true, status: 'mismatch_currency' }, { status: 200 });
   }
@@ -235,8 +249,24 @@ export async function POST(request: NextRequest) {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Fire-and-forget notifications — do not block the 200 response to Geidea
+    writeAuditLog({
+      action: 'payment_success',
+      actorUid: consultation.clientId ?? null,
+      targetId: summary.merchantReferenceId,
+      metadata: { amount: summary.amount, currency: summary.currency, orderId: summary.orderId },
+    });
+    // Fire-and-forget notifications & email — do not block the 200 response to Geidea
     void notifyOnPaidConsultation(summary.merchantReferenceId, consultation);
+    if (consultation.clientEmail) {
+      void sendPaymentReceiptEmail({
+        toEmail: consultation.clientEmail,
+        toName: consultation.clientName || 'Client',
+        caseId: summary.merchantReferenceId,
+        amount: String(summary.amount),
+        currency: summary.currency || 'EGP',
+        transactionId: summary.orderId || summary.reference || summary.merchantReferenceId,
+      }).catch((err) => console.error('[email] payment receipt failed:', err));
+    }
     return NextResponse.json({ received: true, status: 'paid' }, { status: 200 });
   }
 
@@ -264,6 +294,13 @@ export async function POST(request: NextRequest) {
     'payment.callbackSummary': summary,
     'payment.lastCallbackAt': FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  writeAuditLog({
+    action: 'payment_failed',
+    actorUid: consultation.clientId ?? null,
+    targetId: summary.merchantReferenceId,
+    metadata: { responseCode: summary.responseCode, detailedResponseCode: summary.detailedResponseCode },
   });
 
   return NextResponse.json({ received: true, status: 'failed' }, { status: 200 });

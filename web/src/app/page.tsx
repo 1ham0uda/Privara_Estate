@@ -213,13 +213,14 @@ export default function LandingPage() {
           </div>
 
           <p className="text-xs sm:text-sm text-white/40 font-mono tracking-wide">
-            © 2026 Privara Estate. {t('footer.rights')}
+            © 2026 Real Real Estate. {t('footer.rights')}
           </p>
 
           <div className={`flex flex-wrap items-center justify-center gap-5 text-xs sm:text-sm text-white/50 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
             <Link href="/privacy" className="hover:text-white transition-colors">{t('footer.privacy')}</Link>
             <Link href="/terms"   className="hover:text-white transition-colors">{t('footer.terms')}</Link>
             <Link href="/contact" className="hover:text-white transition-colors">{t('footer.contact')}</Link>
+            <Link href="/accessibility" className="hover:text-white transition-colors">{t('footer.accessibility')}</Link>
           </div>
         </div>
       </footer>

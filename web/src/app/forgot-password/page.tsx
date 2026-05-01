@@ -71,7 +71,7 @@ export default function ForgotPasswordPage() {
         <Card className="p-6 bg-white shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
+              <label className="block text-sm font-medium text-ink mb-1">{t('auth.email')}</label>
               <Input
                 type="email"
                 value={email}

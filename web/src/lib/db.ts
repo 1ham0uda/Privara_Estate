@@ -13,11 +13,19 @@ import {
   serverTimestamp,
   Timestamp,
   getDocs,
-  limit
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
-import { UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile, QualityAuditReport, UserRole, AppNotification, NotificationEventType, SystemSettings } from '../types';
+import {
+  UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile,
+  QualityAuditReport, UserRole, AppNotification, NotificationEventType,
+  SystemSettings, ScheduledMeeting, RatingDetails, StructuredReport,
+  ReportSection, ComparableProperty, NotificationPreferences,
+  ConsultantAvailability, PaginatedResult, AuditCriterion,
+} from '../types';
 
 enum OperationType {
   CREATE = 'create',
@@ -460,35 +468,54 @@ export const consultationService = {
     }
   },
 
-  async submitRating(id: string, rating: number, feedback: string): Promise<void> {
+  async submitRating(id: string, rating: number, feedback: string, ratingDetails?: RatingDetails): Promise<void> {
     const path = `consultations/${id}/rating`;
     try {
       await this.updateConsultation(id, {
         rating,
         feedback,
-        status: 'completed'
+        status: 'completed',
+        ...(ratingDetails ? { ratingDetails } : {}),
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   },
 
-  subscribeToConsultations(role: string, uid: string, callback: (cases: ConsultationCase[]) => void) {
+  async replyToRating(id: string, reply: string): Promise<void> {
+    const path = `consultations/${id}/ratingReply`;
+    try {
+      const existing = await this.getConsultation(id);
+      await this.updateConsultation(id, {
+        ratingDetails: {
+          ...(existing?.ratingDetails ?? { responsiveness: 0, expertise: 0, helpfulness: 0, nps: 0 }),
+          consultantReply: reply,
+          consultantRepliedAt: serverTimestamp(),
+        },
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+
+  subscribeToConsultations(role: string, uid: string, callback: (cases: ConsultationCase[], hasMore: boolean) => void, limitCount = 50) {
     const path = 'consultations';
+    const fetchLimit = limitCount + 1;
     let q;
     if (role === 'admin') {
-      q = query(collection(db, 'consultations'), orderBy('createdAt', 'desc'), limit(50));
+      q = query(collection(db, 'consultations'), orderBy('createdAt', 'desc'), limit(fetchLimit));
     } else if (role === 'consultant') {
-      q = query(collection(db, 'consultations'), where('consultantId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
+      q = query(collection(db, 'consultations'), where('consultantId', '==', uid), orderBy('createdAt', 'desc'), limit(fetchLimit));
     } else if (role === 'quality') {
-      q = query(collection(db, 'consultations'), where('qualitySpecialistId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
+      q = query(collection(db, 'consultations'), where('qualitySpecialistId', '==', uid), orderBy('createdAt', 'desc'), limit(fetchLimit));
     } else {
-      q = query(collection(db, 'consultations'), where('clientId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
+      q = query(collection(db, 'consultations'), where('clientId', '==', uid), orderBy('createdAt', 'desc'), limit(fetchLimit));
     }
 
     return onSnapshot(q, (snapshot) => {
-      const cases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ConsultationCase));
-      callback(cases);
+      const hasMore = snapshot.docs.length > limitCount;
+      const cases = snapshot.docs.slice(0, limitCount).map(doc => ({ id: doc.id, ...doc.data() } as ConsultationCase));
+      callback(cases, hasMore);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
     });
@@ -520,7 +547,8 @@ export const chatService = {
     consultantId?: string,
     imageUrl?: string,
     audioUrl?: string,
-    type: Message['type'] = 'text'
+    type: Message['type'] = 'text',
+    fileAttachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number }
   ): Promise<void> {
     const path = 'messages';
     try {
@@ -534,11 +562,27 @@ export const chatService = {
         consultantId: consultantId || null,
         imageUrl: imageUrl || null,
         audioUrl: audioUrl || null,
+        fileUrl: fileAttachment?.fileUrl || null,
+        fileName: fileAttachment?.fileName || null,
+        fileType: fileAttachment?.fileType || null,
+        fileSize: fileAttachment?.fileSize || null,
         type: type || 'text',
         createdAt: serverTimestamp(),
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  },
+
+  async uploadChatFile(caseId: string, file: File): Promise<string> {
+    const path = `chat/${caseId}/files`;
+    try {
+      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+      const storageRef = ref(storage, `${path}/${crypto.randomUUID()}${ext}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      return getDownloadURL(snapshot.ref);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
     }
   },
 
@@ -947,7 +991,7 @@ export const settingsService = {
         return docSnap.data() as SystemSettings;
       }
 
-      return { consultationFee: 500 };
+      return { consultationFee: 500, allowRegistrations: true, maintenanceMode: false };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
     }
@@ -962,4 +1006,373 @@ export const settingsService = {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   }
+};
+
+// ─── Consultant availability ───────────────────────────────────────────────────
+export const availabilityService = {
+  async updateAvailability(uid: string, availability: ConsultantAvailability, note?: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'consultantProfiles', uid), {
+        availability,
+        availabilityNote: note ?? '',
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `consultantProfiles/${uid}`);
+    }
+  },
+
+  async requestConsultantReassignment(caseId: string, reason: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'consultations', caseId), {
+        consultantReassignmentRequest: { reason, requestedAt: serverTimestamp() },
+        reassignmentRequestStatus: 'pending',
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `consultations/${caseId}`);
+    }
+  },
+};
+
+// ─── Scheduled meetings ────────────────────────────────────────────────────────
+export const meetingService = {
+  async proposeMeeting(meeting: Omit<ScheduledMeeting, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    try {
+      const ref = await addDoc(collection(db, 'meetings'), {
+        ...meeting,
+        status: 'scheduled',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return ref.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'meetings');
+    }
+  },
+
+  async updateMeeting(id: string, updates: Partial<ScheduledMeeting>): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'meetings', id), { ...updates, updatedAt: serverTimestamp() });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `meetings/${id}`);
+    }
+  },
+
+  subscribeToMeetings(caseId: string, callback: (meetings: ScheduledMeeting[]) => void) {
+    const q = query(
+      collection(db, 'meetings'),
+      where('caseId', '==', caseId),
+      orderBy('scheduledAt', 'asc')
+    );
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ScheduledMeeting)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'meetings'));
+  },
+
+  generateICS(meeting: ScheduledMeeting): string {
+    const start = meeting.scheduledAt?.toDate ? meeting.scheduledAt.toDate() : new Date(meeting.scheduledAt);
+    const end = new Date(start.getTime() + meeting.durationMinutes * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    return [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Real Real Estate//EN',
+      'BEGIN:VEVENT',
+      `UID:${meeting.id}@realrealestate`,
+      `DTSTAMP:${fmt(new Date())}`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      `SUMMARY:${meeting.title}`,
+      meeting.notes ? `DESCRIPTION:${meeting.notes}` : '',
+      meeting.meetingLink ? `URL:${meeting.meetingLink}` : '',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].filter(Boolean).join('\r\n');
+  },
+};
+
+// ─── Structured report builder ────────────────────────────────────────────────
+export const reportBuilderService = {
+  async saveReport(caseId: string, report: StructuredReport): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'consultations', caseId), {
+        structuredReport: report,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `consultations/${caseId}`);
+    }
+  },
+
+  async uploadSectionPhoto(caseId: string, file: File): Promise<string> {
+    try {
+      const storageRef = ref(storage, `reports/${caseId}/photos/${crypto.randomUUID()}`);
+      const snap = await uploadBytes(storageRef, file);
+      return getDownloadURL(snap.ref);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `reports/${caseId}`);
+    }
+  },
+
+  defaultSections(): ReportSection[] {
+    return [
+      { id: 'executive_summary', title: 'Executive Summary', content: '' },
+      { id: 'market_context', title: 'Market Context', content: '' },
+      { id: 'comparable_properties', title: 'Comparable Properties', content: '' },
+      { id: 'recommendation', title: 'Recommendation', content: '' },
+    ];
+  },
+};
+
+// ─── Quality audit (extended) ─────────────────────────────────────────────────
+export const auditService = {
+  defaultCriteria(): AuditCriterion[] {
+    return [
+      { id: 'c1', label: 'Completeness of analysis', score: 0 },
+      { id: 'c2', label: 'Accuracy of market data', score: 0 },
+      { id: 'c3', label: 'Clarity of recommendations', score: 0 },
+      { id: 'c4', label: 'Client communication quality', score: 0 },
+      { id: 'c5', label: 'Timeliness of responses', score: 0 },
+      { id: 'c6', label: 'Report structure and formatting', score: 0 },
+      { id: 'c7', label: 'Use of supporting evidence', score: 0 },
+      { id: 'c8', label: 'Professionalism', score: 0 },
+      { id: 'c9', label: 'Compliance with platform standards', score: 0 },
+      { id: 'c10', label: 'Overall client satisfaction alignment', score: 0 },
+    ];
+  },
+
+  async uploadEvidence(caseId: string, file: File): Promise<string> {
+    try {
+      const storageRef = ref(storage, `audit-evidence/${caseId}/${crypto.randomUUID()}-${file.name}`);
+      const snap = await uploadBytes(storageRef, file);
+      return getDownloadURL(snap.ref);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `audit-evidence/${caseId}`);
+    }
+  },
+};
+
+// ─── Notification preferences ─────────────────────────────────────────────────
+export const preferencesService = {
+  defaultPreferences(): NotificationPreferences {
+    return {
+      emailEnabled: true,
+      inAppEnabled: true,
+      events: {
+        consultation_assigned: true,
+        report_uploaded: true,
+        consultant_reassigned: true,
+        support_ticket_replied: true,
+        audit_report_submitted: true,
+        meeting_reminder: true,
+        rating_reminder: true,
+      },
+    };
+  },
+
+  async updatePreferences(uid: string, prefs: NotificationPreferences): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'users', uid), { notificationPreferences: prefs });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  },
+
+  async registerFcmToken(uid: string, token: string): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', uid);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) return;
+      const existing: string[] = snap.data()?.fcmTokens ?? [];
+      if (!existing.includes(token)) {
+        await updateDoc(userRef, { fcmTokens: [...existing, token] });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  },
+};
+
+// ─── Paginated admin queries ───────────────────────────────────────────────────
+export const paginationService = {
+  async getConsultants(
+    pageSize = 20,
+    cursor?: QueryDocumentSnapshot
+  ): Promise<PaginatedResult<ConsultantProfile>> {
+    try {
+      let q = query(
+        collection(db, 'consultantProfiles'),
+        orderBy('name', 'asc'),
+        limit(pageSize + 1)
+      );
+      if (cursor) q = query(q, startAfter(cursor));
+      const snap = await getDocs(q);
+      const hasMore = snap.docs.length > pageSize;
+      const items = snap.docs.slice(0, pageSize).map((d) => ({ uid: d.id, ...d.data() } as ConsultantProfile));
+      return { items, hasMore, lastDoc: snap.docs[pageSize - 1] ?? null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'consultantProfiles');
+    }
+  },
+
+  async getClients(
+    pageSize = 20,
+    cursor?: QueryDocumentSnapshot
+  ): Promise<PaginatedResult<UserProfile>> {
+    try {
+      let q = query(
+        collection(db, 'users'),
+        where('role', '==', 'client'),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize + 1)
+      );
+      if (cursor) q = query(q, startAfter(cursor));
+      const snap = await getDocs(q);
+      const hasMore = snap.docs.length > pageSize;
+      const items = snap.docs.slice(0, pageSize).map((d) => ({ uid: d.id, ...d.data() } as UserProfile));
+      return { items, hasMore, lastDoc: snap.docs[pageSize - 1] ?? null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    }
+  },
+
+  async getStaff(
+    pageSize = 50,
+    cursor?: QueryDocumentSnapshot
+  ): Promise<PaginatedResult<UserProfile>> {
+    try {
+      let q = query(
+        collection(db, 'users'),
+        where('role', 'in', ['admin', 'consultant', 'quality']),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize + 1)
+      );
+      if (cursor) q = query(q, startAfter(cursor));
+      const snap = await getDocs(q);
+      const hasMore = snap.docs.length > pageSize;
+      const items = snap.docs.slice(0, pageSize).map((d) => ({ uid: d.id, ...d.data() } as UserProfile));
+      return { items, hasMore, lastDoc: snap.docs[pageSize - 1] ?? null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    }
+  },
+
+  async getConsultantsByFilter(
+    specialty?: string,
+    minRating?: number,
+    area?: string,
+    pageSize = 12,
+    cursor?: QueryDocumentSnapshot
+  ): Promise<PaginatedResult<ConsultantProfile>> {
+    try {
+      let q = query(
+        collection(db, 'consultantProfiles'),
+        where('status', '==', 'active'),
+        orderBy('rating', 'desc'),
+        limit(pageSize + 1)
+      );
+      if (cursor) q = query(q, startAfter(cursor));
+      const snap = await getDocs(q);
+      let docs = snap.docs;
+      if (specialty) docs = docs.filter((d) => (d.data().specialties ?? []).includes(specialty));
+      if (area) docs = docs.filter((d) => (d.data().areas ?? []).some((a: string) => a.toLowerCase().includes(area.toLowerCase())));
+      if (minRating) docs = docs.filter((d) => (d.data().rating ?? 0) >= minRating);
+      const hasMore = snap.docs.length > pageSize && docs.length >= pageSize;
+      const items = docs.slice(0, pageSize).map((d) => ({ uid: d.id, ...d.data() } as ConsultantProfile));
+      return { items, hasMore, lastDoc: snap.docs[pageSize - 1] ?? null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'consultantProfiles');
+    }
+  },
+};
+
+export type GlobalSearchResultType = 'case' | 'client' | 'staff';
+export interface GlobalSearchResult {
+  type: GlobalSearchResultType;
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+}
+
+// ─── Global Cmd-K search ──────────────────────────────────────────────────────
+export const globalSearchService = {
+  async search(q: string): Promise<GlobalSearchResult[]> {
+    if (!q.trim()) return [];
+    const term = q.toLowerCase();
+    const results: GlobalSearchResult[] = [];
+
+    try {
+      // Search users (clients + staff) by displayName prefix
+      const usersSnap = await getDocs(
+        query(
+          collection(db, 'users'),
+          orderBy('displayName'),
+          where('displayName', '>=', q),
+          where('displayName', '<=', q + ''),
+          limit(10)
+        )
+      );
+      for (const d of usersSnap.docs) {
+        const u = d.data() as UserProfile;
+        const type: GlobalSearchResultType = u.role === 'client' ? 'client' : 'staff';
+        const href = u.role === 'client'
+          ? `/admin/clients?uid=${d.id}`
+          : `/admin/staff?uid=${d.id}`;
+        results.push({ type, id: d.id, title: u.displayName, subtitle: u.email, href });
+      }
+
+      // Search consultations by clientName or caseId prefix (case-insensitive fallback)
+      const casesSnap = await getDocs(
+        query(
+          collection(db, 'consultations'),
+          orderBy('clientName'),
+          where('clientName', '>=', q),
+          where('clientName', '<=', q + ''),
+          limit(8)
+        )
+      );
+      for (const d of casesSnap.docs) {
+        const c = d.data();
+        results.push({
+          type: 'case',
+          id: d.id,
+          title: `Case #${d.id.slice(-6).toUpperCase()}`,
+          subtitle: `${c.clientName ?? ''} — ${c.status ?? ''}`,
+          href: `/admin/cases/${d.id}`,
+        });
+      }
+
+      // Also search cases by consultantName
+      const casesByConsultantSnap = await getDocs(
+        query(
+          collection(db, 'consultations'),
+          orderBy('consultantName'),
+          where('consultantName', '>=', q),
+          where('consultantName', '<=', q + ''),
+          limit(5)
+        )
+      );
+      for (const d of casesByConsultantSnap.docs) {
+        if (results.some((r) => r.id === d.id)) continue;
+        const c = d.data();
+        results.push({
+          type: 'case',
+          id: d.id,
+          title: `Case #${d.id.slice(-6).toUpperCase()}`,
+          subtitle: `${c.clientName ?? ''} — ${c.status ?? ''}`,
+          href: `/admin/cases/${d.id}`,
+        });
+      }
+
+      // Client-side filter on already-loaded results for substrings
+      return results.filter(
+        (r) =>
+          r.title.toLowerCase().includes(term) ||
+          r.subtitle.toLowerCase().includes(term)
+      );
+    } catch {
+      return [];
+    }
+  },
 };

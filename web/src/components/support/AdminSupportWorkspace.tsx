@@ -105,19 +105,19 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 h-[calc(100vh-220px)] min-h-[640px]">
       <Card className="p-0 bg-white border-none shadow-sm overflow-hidden" hover={false}>
-        <div className="p-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">{t('admin.dashboard.tab.support')}</h2>
+        <div className="p-4 border-b border-soft-blue">
+          <h2 className="font-bold text-ink">{t('admin.dashboard.tab.support')}</h2>
         </div>
 
         {loading ? (
-          <div className="p-8 flex items-center justify-center gap-2 text-gray-500">
+          <div className="p-8 flex items-center justify-center gap-2 text-brand-slate">
             <Loader2 className="w-5 h-5 animate-spin" />
             {t('common.loading')}
           </div>
         ) : loadError ? (
           <div className="p-8 text-center text-rose-600 text-sm">{loadError}</div>
         ) : tickets.length === 0 ? (
-          <div className="p-8 text-center text-gray-500 text-sm">{t('support.no_messages')}</div>
+          <div className="p-8 text-center text-brand-slate text-sm">{t('support.no_messages')}</div>
         ) : (
           <div className="max-h-full overflow-y-auto">
             {tickets.map((ticket) => (
@@ -125,19 +125,19 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
                 key={ticket.id}
                 type="button"
                 onClick={() => setSelectedId(ticket.id)}
-                className={`w-full p-4 border-b border-gray-50 text-left transition-colors hover:bg-gray-50 ${
+                className={`w-full p-4 border-b border-soft-blue text-left transition-colors hover:bg-cloud ${
                   selectedId === ticket.id ? 'bg-blue-50' : ''
                 } ${isRTL ? 'text-right' : ''}`}
               >
                 <div className={`flex items-center justify-between gap-2 mb-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <span className="text-sm font-semibold text-gray-900">{ticket.userName}</span>
+                  <span className="text-sm font-semibold text-ink">{ticket.userName}</span>
                   <Badge variant={ticket.status === 'open' ? 'warning' : 'success'}>
                     {t(`support.${ticket.status}`)}
                   </Badge>
                 </div>
-                <p className="text-xs text-gray-500 mb-1">{ticket.userEmail}</p>
-                <p className="text-sm text-gray-700 line-clamp-2">{ticket.text}</p>
-                <p className="text-[11px] text-gray-400 mt-2">
+                <p className="text-xs text-brand-slate mb-1">{ticket.userEmail}</p>
+                <p className="text-sm text-ink line-clamp-2">{ticket.text}</p>
+                <p className="text-[11px] text-brand-slate mt-2">
                   {formatDate(ticket.updatedAt || ticket.createdAt, language)}
                 </p>
               </button>
@@ -148,23 +148,23 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
 
       <Card className="p-0 bg-white border-none shadow-sm overflow-hidden" hover={false}>
         {!selectedTicket ? (
-          <div className="h-full flex items-center justify-center p-8 text-center text-gray-500">
+          <div className="h-full flex items-center justify-center p-8 text-center text-brand-slate">
             <div>
-              <MessageSquare className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+              <MessageSquare className="w-10 h-10 mx-auto mb-3 text-brand-slate/40" />
               <p className="font-medium">{t('support.select_ticket')}</p>
             </div>
           </div>
         ) : (
           <>
-            <div className={`p-5 border-b border-gray-100 flex items-center justify-between gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+            <div className={`p-5 border-b border-soft-blue flex items-center justify-between gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
               <div>
                 <div className={`flex items-center gap-2 mb-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <h2 className="font-bold text-gray-900">{selectedTicket.userName}</h2>
+                  <h2 className="font-bold text-ink">{selectedTicket.userName}</h2>
                   <Badge variant={selectedTicket.status === 'open' ? 'warning' : 'success'}>
                     {t(`support.${selectedTicket.status}`)}
                   </Badge>
                 </div>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-brand-slate">
                   {selectedTicket.userEmail} • {t(`auth.demo_${selectedTicket.userRole}`)}
                 </p>
               </div>
@@ -180,16 +180,16 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
               ) : null}
             </div>
 
-            <div className="p-6 h-[440px] overflow-y-auto space-y-4 bg-gray-50/60">
+            <div className="p-6 h-[440px] overflow-y-auto space-y-4 bg-cloud/60">
               <div className={`flex flex-col ${isRTL ? 'items-end' : 'items-start'}`}>
-                <div className="max-w-[85%] bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-                  <div className={`flex items-center gap-2 mb-2 text-xs text-gray-500 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <span className="font-semibold text-gray-900">{selectedTicket.userName}</span>
+                <div className="max-w-[85%] bg-white border border-soft-blue rounded-2xl p-4 shadow-sm">
+                  <div className={`flex items-center gap-2 mb-2 text-xs text-brand-slate ${isRTL ? 'flex-row-reverse' : ''}`}>
+                    <span className="font-semibold text-ink">{selectedTicket.userName}</span>
                     <span>•</span>
                     <span>{t(`auth.demo_${selectedTicket.userRole}`)}</span>
                   </div>
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedTicket.text}</p>
-                  <p className="text-[11px] text-gray-400 mt-2">{formatDate(selectedTicket.createdAt, language)}</p>
+                  <p className="text-sm text-ink whitespace-pre-wrap">{selectedTicket.text}</p>
+                  <p className="text-[11px] text-brand-slate mt-2">{formatDate(selectedTicket.createdAt, language)}</p>
                 </div>
               </div>
 
@@ -204,22 +204,22 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
                   >
                     <div
                       className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${
-                        isAdminReply ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-800'
+                        isAdminReply ? 'bg-ink text-white' : 'bg-white border border-soft-blue text-ink'
                       }`}
                     >
                       <div
                         className={`flex items-center gap-2 mb-2 text-xs ${
-                          isAdminReply ? 'text-gray-300' : 'text-gray-500'
+                          isAdminReply ? 'text-white/70' : 'text-brand-slate'
                         } ${isRTL ? 'flex-row-reverse' : ''}`}
                       >
-                        <span className={`font-semibold ${isAdminReply ? 'text-white' : 'text-gray-900'}`}>
+                        <span className={`font-semibold ${isAdminReply ? 'text-white' : 'text-ink'}`}>
                           {reply.senderName}
                         </span>
                         <span>•</span>
                         <span>{reply.senderRole === 'admin' ? t('support.support_team') : t(`auth.demo_${reply.senderRole}`)}</span>
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{reply.text}</p>
-                      <p className="text-[11px] mt-2 text-gray-400">{formatDate(reply.createdAt, language)}</p>
+                      <p className="text-[11px] mt-2 text-brand-slate">{formatDate(reply.createdAt, language)}</p>
                     </div>
                   </div>
                 );
@@ -227,13 +227,13 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
             </div>
 
             {selectedTicket.status === 'open' ? (
-              <form onSubmit={handleSendReply} className="p-5 border-t border-gray-100 bg-white">
+              <form onSubmit={handleSendReply} className="p-5 border-t border-soft-blue bg-white">
                 <div className="space-y-3">
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     placeholder={t('support.type_reply')}
-                    className={`w-full h-24 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-black focus:outline-none text-sm resize-none ${
+                    className={`w-full h-24 px-4 py-3 bg-cloud border border-soft-blue rounded-xl focus:border-blue-600 focus:outline-none text-sm resize-none ${
                       isRTL ? 'text-right' : ''
                     }`}
                   />
@@ -246,7 +246,7 @@ export default function AdminSupportWorkspace({ initialTicketId = null }: AdminS
                 </div>
               </form>
             ) : (
-              <div className="p-5 border-t border-gray-100 bg-white text-sm text-gray-500 flex items-center gap-2">
+              <div className="p-5 border-t border-soft-blue bg-white text-sm text-brand-slate flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
                 {t('support.closed_notice')}
               </div>

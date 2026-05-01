@@ -5,6 +5,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '@/src/lib/firebase';
 import { userService } from '@/src/lib/db';
 import { UserProfile } from '@/src/types';
+import { requestAndRegisterFcmToken } from '@/src/lib/fcm';
 
 interface AuthContextType {
   user: User | null;
@@ -93,6 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           if (firebaseUser.emailVerified) {
             const userProfile = await userService.getUserProfile(firebaseUser.uid);
             setProfile(userProfile);
+            void requestAndRegisterFcmToken(firebaseUser.uid);
           } else {
             // User signed in but hasn't verified their email yet.
             // Keep user set so verify-email page can call sendEmailVerification,

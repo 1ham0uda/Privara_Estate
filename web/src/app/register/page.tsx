@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from '@/src/lib/firebase';
-import { userService } from '@/src/lib/db';
+import { userService, settingsService } from '@/src/lib/db';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { Button, Card } from '@/src/components/UI';
-import { Mail, Lock, User as UserIcon } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, Gift } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
 
 function getRegisterErrorMessage(error: any, t: (key: string) => string) {
@@ -31,9 +31,22 @@ export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registrationsClosed, setRegistrationsClosed] = useState(false);
   const router = useRouter();
   const { profile, loading: authLoading, refreshProfile } = useAuth();
+
+  useEffect(() => {
+    settingsService.getSettings()
+      .then(s => setRegistrationsClosed(s?.allowRegistrations === false))
+      .catch(() => {});
+    // Pre-fill referral code from URL ?ref=CODE
+    if (typeof window !== 'undefined') {
+      const ref = new URLSearchParams(window.location.search).get('ref');
+      if (ref) setReferralCode(ref.toUpperCase());
+    }
+  }, []);
 
   useEffect(() => {
     if (!authLoading && profile) router.push(`/${profile.role}/dashboard`);
@@ -50,6 +63,8 @@ export default function RegisterPage() {
       const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       createdUser = userCredential.user;
       await updateProfile(createdUser, { displayName: normalizedName });
+      const newReferralCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+      const trimmedRef = referralCode.trim().toUpperCase();
       await userService.createUserProfile({
         uid: createdUser.uid,
         email: createdUser.email || normalizedEmail,
@@ -60,7 +75,18 @@ export default function RegisterPage() {
         totalConsultations: 0,
         activeConsultations: 0,
         completedConsultations: 0,
+        referralCode: newReferralCode,
+        ...(trimmedRef ? { referredBy: trimmedRef } : {}),
       });
+      // Track referral on server (best-effort — does not block registration)
+      if (trimmedRef) {
+        const idToken = await createdUser.getIdToken();
+        fetch('/api/referral/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ referralCode: trimmedRef }),
+        }).catch(() => {});
+      }
       profileCreated = true;
       await sendEmailVerification(createdUser);
       toast.success(t('auth.verify_email.sent'));
@@ -111,6 +137,17 @@ export default function RegisterPage() {
       {/* Form card */}
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <Card className="py-8 px-4 sm:px-10 border-soft-blue shadow-sm" hover={false}>
+          {registrationsClosed ? (
+            <div className="text-center py-4 space-y-4">
+              <p className="text-ink font-semibold">{t('auth.register.registrations_closed') || 'Registrations are currently closed'}</p>
+              <p className="text-sm text-brand-slate">{t('auth.register.registrations_closed_desc') || 'New client accounts are not being accepted at this time. Please check back later.'}</p>
+              <Link href="/login">
+                <Button variant="outline" className="w-full h-12 rounded-full mt-2">
+                  {t('auth.signin_instead')}
+                </Button>
+              </Link>
+            </div>
+          ) : (
           <form className="space-y-5" onSubmit={handleRegister}>
 
             {/* Full name */}
@@ -167,6 +204,25 @@ export default function RegisterPage() {
               </div>
             </div>
 
+            {/* Referral code (optional) */}
+            <div className={isRTL ? 'text-right' : 'text-left'}>
+              <label htmlFor="referralCode" className="block text-sm font-medium text-ink mb-1.5">
+                {t('auth.referral_code')} <span className="text-brand-slate font-normal text-xs">({t('common.optional')})</span>
+              </label>
+              <div className="relative">
+                <div className={`absolute inset-y-0 ${isRTL ? 'right-0 pr-3.5' : 'left-0 pl-3.5'} flex items-center pointer-events-none`}>
+                  <Gift className="h-4 w-4 text-brand-slate" />
+                </div>
+                <input
+                  id="referralCode" name="referralCode" type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  className={inputCls(isRTL, 'l') + ' uppercase'}
+                  placeholder={t('auth.referral_code_placeholder')}
+                />
+              </div>
+            </div>
+
             {/* Terms */}
             <div className="flex items-start gap-3">
               <input
@@ -185,25 +241,30 @@ export default function RegisterPage() {
               {t('auth.register_button')}
             </Button>
           </form>
+          )}
 
-          {/* Divider */}
-          <div className="mt-6 relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-soft-blue" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="px-3 bg-white text-brand-slate font-mono tracking-wide">
-                {t('auth.already_have')}
-              </span>
-            </div>
-          </div>
-          <div className="mt-5">
-            <Link href="/login">
-              <Button variant="outline" className="w-full h-12 rounded-full">
-                {t('auth.signin_instead')}
-              </Button>
-            </Link>
-          </div>
+          {!registrationsClosed && (
+            <>
+              {/* Divider */}
+              <div className="mt-6 relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-soft-blue" />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="px-3 bg-white text-brand-slate font-mono tracking-wide">
+                    {t('auth.already_have')}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-5">
+                <Link href="/login">
+                  <Button variant="outline" className="w-full h-12 rounded-full">
+                    {t('auth.signin_instead')}
+                  </Button>
+                </Link>
+              </div>
+            </>
+          )}
         </Card>
 
         <p className="mt-6 text-center text-xs font-mono text-brand-slate tracking-[0.12em] uppercase">

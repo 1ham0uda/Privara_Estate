@@ -25,6 +25,7 @@ import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
 import SupportModal from '@/src/components/SupportModal';
 import RatingModal from '@/src/components/RatingModal';
+import OnboardingTour from '@/src/components/OnboardingTour';
 
 export default function ClientDashboard() {
   const { t, isRTL, language } = useLanguage();
@@ -62,10 +63,10 @@ export default function ClientDashboard() {
     }
   }, [profile]);
 
-  const handleRatingSubmit = async (rating: number, feedback: string) => {
+  const handleRatingSubmit = async (rating: number, feedback: string, ratingDetails: import('@/src/types').RatingDetails) => {
     if (!selectedCaseForRating) return;
     try {
-      await consultationService.submitRating(selectedCaseForRating.id, rating, feedback);
+      await consultationService.submitRating(selectedCaseForRating.id, rating, feedback, ratingDetails);
       toast.success(t('client.success_feedback'));
       setIsRatingModalOpen(false);
       setSelectedCaseForRating(null);
@@ -86,7 +87,7 @@ export default function ClientDashboard() {
           <h2 className="font-serif text-2xl font-bold text-ink mb-4">
             {t('auth.account_deactivated') || 'Account Deactivated'}
           </h2>
-          <p className="text-gray-600 mb-8 leading-relaxed">
+          <p className="text-brand-slate mb-8 leading-relaxed">
             {t('auth.account_deactivated_message') || 'Your account has been deactivated. Please contact support for more information.'}
           </p>
           <Button 
@@ -118,6 +119,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
+      {profile && <OnboardingTour uid={profile.uid} />}
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -152,7 +154,7 @@ export default function ClientDashboard() {
                           {t(`case.status.${activeCase.status}`)}
                         </Badge>
                         <h3 className="text-2xl font-bold">{t('client.case_number')} {activeCase.id.slice(-6)}</h3>
-                        <p className="text-gray-500">{t('client.started_on')} {formatDate(activeCase.createdAt, language)}</p>
+                        <p className="text-brand-slate">{t('client.started_on')} {formatDate(activeCase.createdAt, language)}</p>
                       </div>
                       <Link href={`/client/cases/${activeCase.id}`}>
                         <Button variant="outline" className="rounded-xl">{t('client.view_details')}</Button>
@@ -161,12 +163,12 @@ export default function ClientDashboard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                       <div className="bg-soft-blue p-4 rounded-xl">
-                        <p className="text-xs font-medium text-gray-400 uppercase mb-1">{t('client.current_stage')}</p>
-                        <p className="font-bold text-gray-900">{t(`case.stage.${activeCase.stage}`)}</p>
+                        <p className="text-xs font-medium text-brand-slate uppercase mb-1">{t('client.current_stage')}</p>
+                        <p className="font-bold text-ink">{t(`case.stage.${activeCase.stage}`)}</p>
                       </div>
                       <div className="bg-soft-blue p-4 rounded-xl">
-                        <p className="text-xs font-medium text-gray-400 uppercase mb-1">{t('client.goal')}</p>
-                        <p className="font-bold text-gray-900 capitalize">{activeCase.intake.goal}</p>
+                        <p className="text-xs font-medium text-brand-slate uppercase mb-1">{t('client.goal')}</p>
+                        <p className="font-bold text-ink capitalize">{activeCase.intake.goal}</p>
                       </div>
                     </div>
 
@@ -183,11 +185,11 @@ export default function ClientDashboard() {
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <User className="w-6 h-6 text-gray-400" />
+                              <User className="w-6 h-6 text-white/40" />
                             )}
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400">{t('client.assigned_consultant')}</p>
+                            <p className="text-xs text-white/60">{t('client.assigned_consultant')}</p>
                             <p className="font-bold">{consultants[activeCase.consultantId]?.name || 'Loading...'}</p>
                           </div>
                         </div>
@@ -206,12 +208,12 @@ export default function ClientDashboard() {
                   </div>
                 </Card>
               ) : (
-                <Card className="flex flex-col items-center justify-center py-16 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                    <FileText className="w-8 h-8 text-gray-300" />
+                <Card className="flex flex-col items-center justify-center py-16 text-center bg-white border-dashed border-2 border-soft-blue" hover={false}>
+                  <div className="w-16 h-16 bg-cloud rounded-full flex items-center justify-center mb-4">
+                    <FileText className="w-8 h-8 text-brand-slate/40" />
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900">{t('client.no_active_title')}</h3>
-                  <p className="text-gray-500 max-w-xs mx-auto mb-6">
+                  <h3 className="text-lg font-bold text-ink">{t('client.no_active_title')}</h3>
+                  <p className="text-brand-slate max-w-xs mx-auto mb-6">
                     {t('client.no_active_text')}
                   </p>
                   <Link href="/client/new-consultation">
@@ -226,7 +228,7 @@ export default function ClientDashboard() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <h2 className="text-xl font-bold">{t('client.consultation_history')}</h2>
                 <div className="relative flex-1 max-w-md">
-                  <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400`} />
+                  <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-4 h-4 text-brand-slate`} />
                   <input 
                     type="text"
                     placeholder={t('client.find_consultation')}
@@ -247,7 +249,7 @@ export default function ClientDashboard() {
                         </div>
                         <div>
                           <p className="font-bold">{t('client.case_number')} {c.id.slice(-6)}</p>
-                          <p className="text-xs text-gray-500">{formatDate(c.completedAt || c.updatedAt, language)}</p>
+                          <p className="text-xs text-brand-slate">{formatDate(c.completedAt || c.updatedAt, language)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -273,12 +275,12 @@ export default function ClientDashboard() {
                   ))}
                 </div>
               ) : searchQuery ? (
-                <Card className="py-12 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                  <p className="text-gray-500">{t('client.no_history_search')}</p>
+                <Card className="py-12 text-center bg-white border-dashed border-2 border-soft-blue" hover={false}>
+                  <p className="text-brand-slate">{t('client.no_history_search')}</p>
                 </Card>
               ) : history.length === 0 ? (
-                <Card className="py-12 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                  <p className="text-gray-500">{t('client.no_history')}</p>
+                <Card className="py-12 text-center bg-white border-dashed border-2 border-soft-blue" hover={false}>
+                  <p className="text-brand-slate">{t('client.no_history')}</p>
                 </Card>
               ) : null}
             </section>
@@ -307,7 +309,7 @@ export default function ClientDashboard() {
 
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <h3 className="text-lg font-bold mb-4">{t('client.need_help_title')}</h3>
-              <p className="text-sm text-gray-500 mb-6">
+              <p className="text-sm text-brand-slate mb-6">
                 {t('client.need_help_text')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

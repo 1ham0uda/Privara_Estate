@@ -4,21 +4,23 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
-import { consultationService, userService, consultantService } from '@/src/lib/db';
-import { ConsultationCase, UserProfile, ConsultantProfile } from '@/src/types';
-import { Card, Badge, Button } from '@/src/components/UI';
-import { 
-  MessageSquare, 
-  Clock, 
-  ChevronRight, 
-  User, 
+import { consultationService, userService, consultantService, availabilityService } from '@/src/lib/db';
+import { ConsultationCase, UserProfile, ConsultantProfile, ConsultantAvailability } from '@/src/types';
+import { Card, Badge, Button, Skeleton, SkeletonCard } from '@/src/components/UI';
+import {
+  MessageSquare,
+  Clock,
+  ChevronRight,
+  User,
   FileText,
   AlertCircle,
   CheckCircle2,
   LayoutDashboard,
   Users,
   TrendingUp,
-  Star
+  Star,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
@@ -31,6 +33,9 @@ export default function ConsultantDashboard() {
   const [cases, setCases] = useState<ConsultationCase[]>([]);
   const [consultantProfile, setConsultantProfile] = useState<ConsultantProfile | null>(null);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [availability, setAvailability] = useState<ConsultantAvailability>('available');
+  const [availabilityNote, setAvailabilityNote] = useState('');
+  const [savingAvailability, setSavingAvailability] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -38,7 +43,11 @@ export default function ConsultantDashboard() {
         setCases(data);
       });
 
-      consultantService.getConsultantProfile(profile.uid).then(setConsultantProfile);
+      consultantService.getConsultantProfile(profile.uid).then((p) => {
+        setConsultantProfile(p);
+        if (p?.availability) setAvailability(p.availability);
+        if (p?.availabilityNote) setAvailabilityNote(p.availabilityNote);
+      });
 
       return () => unsubscribe();
     }
@@ -46,8 +55,16 @@ export default function ConsultantDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-cloud">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="h-16 bg-white border-b border-soft-blue px-6 flex items-center"><Skeleton className="h-6 w-32" /></div>
+        <div className="max-w-5xl mx-auto px-4 py-10 space-y-6">
+          <Skeleton className="h-8 w-56" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[1,2,3].map(i => <SkeletonCard key={i} lines={2} />)}
+          </div>
+          <SkeletonCard lines={6} />
+          <SkeletonCard lines={4} />
+        </div>
       </div>
     );
   }
@@ -99,7 +116,7 @@ export default function ConsultantDashboard() {
                 <LayoutDashboard className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('consultant.active_cases')}</p>
+                <p className="text-sm text-brand-slate">{t('consultant.active_cases')}</p>
                 <p className="text-2xl font-bold">{activeCases.length}</p>
               </div>
             </div>
@@ -110,7 +127,7 @@ export default function ConsultantDashboard() {
                 <CheckCircle2 className="w-6 h-6 text-emerald-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('consultant.completed')}</p>
+                <p className="text-sm text-brand-slate">{t('consultant.completed')}</p>
                 <p className="text-2xl font-bold">{completedCases.length}</p>
               </div>
             </div>
@@ -121,7 +138,7 @@ export default function ConsultantDashboard() {
                 <Star className="w-6 h-6 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('consultant.avg_rating')}</p>
+                <p className="text-sm text-brand-slate">{t('consultant.avg_rating')}</p>
                 <p className="text-2xl font-bold">{avgRating}</p>
               </div>
             </div>
@@ -151,16 +168,16 @@ export default function ConsultantDashboard() {
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <User className="w-6 h-6 text-gray-300" />
+                              <User className="w-6 h-6 text-brand-slate/40" />
                             )}
                           </div>
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                               <Badge variant="info" className="text-[10px] uppercase">{t(`case.status.${c.status}`)}</Badge>
-                              <span className="text-xs text-gray-400">#{c.id.slice(-6)}</span>
+                              <span className="text-xs text-brand-slate">#{c.id.slice(-6)}</span>
                             </div>
-                            <h3 className="font-bold text-gray-900">{c.clientName || t('common.client')}</h3>
-                            <p className="text-xs text-gray-500">{t('consultant.goal')}: <span className="capitalize">{c.intake.goal}</span> • {formatDate(c.createdAt, language)}</p>
+                            <h3 className="font-bold text-ink">{c.clientName || t('common.client')}</h3>
+                            <p className="text-xs text-brand-slate">{t('consultant.goal')}: <span className="capitalize">{c.intake.goal}</span> • {formatDate(c.createdAt, language)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -179,8 +196,8 @@ export default function ConsultantDashboard() {
                     </Card>
                   ))
                 ) : (
-                  <Card className="py-12 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                    <p className="text-gray-500">{t('consultant.no_active')}</p>
+                  <Card className="py-12 text-center bg-white border-dashed border-2 border-soft-blue" hover={false}>
+                    <p className="text-brand-slate">{t('consultant.no_active')}</p>
                   </Card>
                 )}
               </div>
@@ -195,14 +212,14 @@ export default function ConsultantDashboard() {
                   {ratedCases.slice(0, 4).map(c => (
                     <Card key={c.id} className="p-4 bg-white border-none shadow-sm">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-gray-900">{c.clientName || t('common.client')}</span>
+                        <span className="text-xs font-bold text-ink">{c.clientName || t('common.client')}</span>
                         <div className="flex gap-0.5">
                           {[1, 2, 3, 4, 5].map(s => (
-                            <Star key={s} className={`w-3 h-3 ${c.rating! >= s ? 'text-yellow-400 fill-current' : 'text-gray-200'}`} />
+                            <Star key={s} className={`w-3 h-3 ${c.rating! >= s ? 'text-yellow-400 fill-current' : 'text-ink/20'}`} />
                           ))}
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 italic line-clamp-2">&quot;{c.feedback || t('consultant.no_comment')}&quot;</p>
+                      <p className="text-xs text-brand-slate italic line-clamp-2">&quot;{c.feedback || t('consultant.no_comment')}&quot;</p>
                     </Card>
                   ))}
                 </div>
@@ -222,11 +239,11 @@ export default function ConsultantDashboard() {
                           </div>
                           <div>
                             <p className="text-sm font-bold">{c.clientName || t('common.client')}</p>
-                            <p className="text-[10px] text-gray-400">{formatDate(c.completedAt || c.updatedAt, language)}</p>
+                            <p className="text-[10px] text-brand-slate">{formatDate(c.completedAt || c.updatedAt, language)}</p>
                           </div>
                         </div>
                         <Link href={`/consultant/cases/${c.id}`}>
-                          <ChevronRight className={`w-4 h-4 text-gray-300 ${isRTL ? 'rotate-180' : ''}`} />
+                          <ChevronRight className={`w-4 h-4 text-brand-slate/40 ${isRTL ? 'rotate-180' : ''}`} />
                         </Link>
                       </div>
                     </Card>
@@ -237,6 +254,58 @@ export default function ConsultantDashboard() {
           </div>
 
           <div className="space-y-8">
+            {/* Availability Toggle */}
+            <Card className="bg-white border-none shadow-sm p-6" hover={false}>
+              <h3 className="text-base font-bold mb-4 flex items-center gap-2">
+                {availability === 'available' ? <Wifi className="w-4 h-4 text-emerald-500" /> : <WifiOff className="w-4 h-4 text-brand-slate" />}
+                {t('consultant.availability.title')}
+              </h3>
+              <div className="flex gap-2 mb-4">
+                {(['available', 'busy', 'away'] as ConsultantAvailability[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setAvailability(s)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                      availability === s
+                        ? s === 'available'
+                          ? 'bg-emerald-500 text-white border-emerald-500'
+                          : s === 'busy'
+                            ? 'bg-amber-500 text-white border-amber-500'
+                            : 'bg-slate-400 text-white border-slate-400'
+                        : 'bg-cloud border-soft-blue text-brand-slate hover:border-blue-200'
+                    }`}
+                  >
+                    {t(`consultant.availability.${s}`)}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={availabilityNote}
+                onChange={(e) => setAvailabilityNote(e.target.value)}
+                placeholder={t('consultant.availability.note_placeholder')}
+                className="w-full h-9 px-3 text-xs border border-soft-blue rounded-xl bg-cloud focus:outline-none focus:border-blue-400 mb-3"
+              />
+              <Button
+                size="sm"
+                className="w-full rounded-xl"
+                loading={savingAvailability}
+                onClick={async () => {
+                  if (!profile) return;
+                  setSavingAvailability(true);
+                  try {
+                    await availabilityService.updateAvailability(profile.uid, availability, availabilityNote);
+                    const { toast } = await import('react-hot-toast');
+                    toast.success(t('consultant.availability.saved'));
+                  } finally {
+                    setSavingAvailability(false);
+                  }
+                }}
+              >
+                {t('consultant.availability.save')}
+              </Button>
+            </Card>
+
             <Card className="bg-ink text-white border-none p-8" hover={false}>
               <h3 className="font-serif text-lg font-bold mb-4">{t('consultant.guidelines_title')}</h3>
               <ul className="space-y-4 text-sm text-white/60">
@@ -257,7 +326,7 @@ export default function ConsultantDashboard() {
 
             <Card className="bg-white border-none shadow-sm p-8" hover={false}>
               <h3 className="text-lg font-bold mb-4">{t('consultant.support_title')}</h3>
-              <p className="text-sm text-gray-500 mb-6">
+              <p className="text-sm text-brand-slate mb-6">
                 {t('consultant.support_text')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

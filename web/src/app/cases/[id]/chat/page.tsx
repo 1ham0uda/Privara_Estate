@@ -25,54 +25,28 @@ import {
   PhoneCall,
   PhoneIncoming,
   PhoneOff,
+  Paperclip,
+  FileText,
+  Download,
+  Video,
+  VideoOff,
+  Monitor,
+  MonitorOff,
 } from 'lucide-react';
 import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
 import Image from 'next/image';
 import { useLanguage } from '@/src/context/LanguageContext';
+import { auth } from '@/src/lib/firebase';
 
 const CALL_TIMEOUT_MS = 45_000;
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
 ];
 
-const parseIceServersFromEnv = (): RTCIceServer[] => {
-  const fromJson = process.env.NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON;
-  if (fromJson) {
-    try {
-      const parsed = JSON.parse(fromJson);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as RTCIceServer[];
-      }
-    } catch (error) {
-      console.error('[call] Invalid NEXT_PUBLIC_WEBRTC_ICE_SERVERS_JSON', error);
-    }
-  }
-
-  const turnUrls = (process.env.NEXT_PUBLIC_WEBRTC_TURN_URLS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const turnUsername = process.env.NEXT_PUBLIC_WEBRTC_TURN_USERNAME;
-  const turnCredential = process.env.NEXT_PUBLIC_WEBRTC_TURN_CREDENTIAL;
-
-  if (turnUrls.length > 0 && turnUsername && turnCredential) {
-    return [
-      ...DEFAULT_ICE_SERVERS,
-      {
-        urls: turnUrls,
-        username: turnUsername,
-        credential: turnCredential,
-      },
-    ];
-  }
-
-  return DEFAULT_ICE_SERVERS;
-};
-
-const RTC_CONFIGURATION: RTCConfiguration = {
-  iceServers: parseIceServersFromEnv(),
+const DEFAULT_RTC_CONFIGURATION: RTCConfiguration = {
+  iceServers: DEFAULT_ICE_SERVERS,
   iceCandidatePoolSize: 10,
 };
 
@@ -96,7 +70,7 @@ function VoiceNoteBubble({ src, isMe, label }: { src: string; isMe: boolean; lab
   const [durationSec, setDurationSec] = useState<number | null>(null);
 
   return (
-    <div className={`rounded-2xl border ${isMe ? 'border-white/15 bg-white/10' : 'border-gray-200 bg-white'} p-2.5 min-w-[220px] max-w-[260px]`}>
+    <div className={`rounded-2xl border ${isMe ? 'border-white/15 bg-white/10' : 'border-soft-blue bg-white'} p-2.5 min-w-[220px] max-w-[260px]`}>
       <audio
         controls
         preload="metadata"
@@ -109,7 +83,7 @@ function VoiceNoteBubble({ src, isMe, label }: { src: string; isMe: boolean; lab
           }
         }}
       />
-      <div className={`mt-2 flex items-center justify-between text-[11px] ${isMe ? 'text-white/80' : 'text-gray-500'}`}>
+      <div className={`mt-2 flex items-center justify-between text-[11px] ${isMe ? 'text-white/80' : 'text-brand-slate'}`}>
         <span className="font-medium">{label}</span>
         <span>{formatMediaDuration(durationSec)}</span>
       </div>
@@ -141,11 +115,16 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingVoiceNote, setPendingVoiceNote] = useState<PendingVoiceNote | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileAttachRef = useRef<HTMLInputElement>(null);
 
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [showCallPanel, setShowCallPanel] = useState(false);
   const [callElapsed, setCallElapsed] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [videoEnabled, setVideoEnabled] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
 
@@ -154,6 +133,9 @@ export default function ChatPage() {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const localAudioRef = useRef<HTMLAudioElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const remoteCandidateIdsRef = useRef<Set<string>>(new Set());
   const pendingCandidatesRef = useRef<CallIceCandidate[]>([]);
   const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -171,6 +153,7 @@ export default function ChatPage() {
   const lastAppliedAnswerSdpRef = useRef<string | null>(null);
   const remotePlaybackContextRef = useRef<AudioContext | null>(null);
   const remotePlaybackSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const rtcConfigRef = useRef<RTCConfiguration>(DEFAULT_RTC_CONFIGURATION);
 
   const { t, isRTL, language } = useLanguage();
   const isQuality = profile?.role === 'quality';
@@ -220,6 +203,18 @@ export default function ChatPage() {
       }
     }
   }, [consultation, profile]);
+
+  useEffect(() => {
+    if (!profile) return;
+    auth.currentUser?.getIdToken().then(token =>
+      fetch('/api/ice-servers', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.iceServers) rtcConfigRef.current = { iceServers: data.iceServers, iceCandidatePoolSize: 10 };
+        })
+        .catch(() => {})
+    );
+  }, [profile]);
 
   const getOtherUserName = () => {
     if (otherUser?.displayName) return otherUser.displayName;
@@ -369,6 +364,21 @@ export default function ChatPage() {
       mediaMixRef.current = null;
     }
 
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.pause();
+      remoteVideoRef.current.srcObject = null;
+    }
+
+    if (localVideoRef.current) {
+      localVideoRef.current.pause();
+      localVideoRef.current.srcObject = null;
+    }
+
     stopRemotePlayback();
 
     if (!preservePanel) {
@@ -376,6 +386,8 @@ export default function ChatPage() {
     }
 
     setIsMuted(false);
+    setVideoEnabled(false);
+    setScreenSharing(false);
     setCallElapsed(0);
     resetRemoteCandidates();
   }, [stopRemotePlayback]);
@@ -387,6 +399,61 @@ export default function ChatPage() {
       discardPendingVoiceNote();
     };
   }, [cleanupCallMedia, discardPendingVoiceNote]);
+
+  const ALLOWED_FILE_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ];
+
+  const handleFileAttachSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      toast.error(t('chat.file_type_error'));
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(t('chat.file_size_error'));
+      return;
+    }
+    setSelectedFile(file);
+    e.target.value = '';
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleSendFile = async () => {
+    if (!selectedFile || !profile || !caseId || !consultation) return;
+    setUploadingFile(true);
+    try {
+      const fileUrl = await chatService.uploadChatFile(caseId as string, selectedFile);
+      await chatService.sendMessage(
+        caseId as string,
+        profile.uid,
+        profile.displayName || profile.email || t(`common.${profile.role}`),
+        profile.role,
+        '',
+        consultation.clientId,
+        consultation.consultantId,
+        '',
+        undefined,
+        'file',
+        { fileUrl, fileName: selectedFile.name, fileType: selectedFile.type, fileSize: selectedFile.size }
+      );
+      setSelectedFile(null);
+    } catch {
+      toast.error(t('chat.file_send_failed'));
+    } finally {
+      setUploadingFile(false);
+    }
+  };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -709,6 +776,12 @@ export default function ChatPage() {
       return;
     }
 
+    // Attach video tracks to the remote video element
+    if (remoteVideoRef.current && remoteStream.getVideoTracks().length > 0) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+
     try {
       const playbackContext = await ensureRemotePlaybackContext();
       if (playbackContext) {
@@ -757,7 +830,7 @@ export default function ChatPage() {
   };
 
   const buildPeerConnection = async (callId: string, side: 'caller' | 'callee', localStream: MediaStream) => {
-    const peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
+    const peerConnection = new RTCPeerConnection(rtcConfigRef.current);
     peerConnectionRef.current = peerConnection;
 
     localStream.getAudioTracks().forEach((track) => {
@@ -996,6 +1069,91 @@ export default function ChatPage() {
     setIsMuted(shouldMute);
   };
 
+  const toggleVideo = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc) return;
+
+    if (videoEnabled) {
+      // Remove video tracks
+      const senders = pc.getSenders().filter((s) => s.track?.kind === 'video');
+      senders.forEach((s) => pc.removeTrack(s));
+      localStreamRef.current?.getVideoTracks().forEach((t) => {
+        t.stop();
+        localStreamRef.current?.removeTrack(t);
+      });
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      setVideoEnabled(false);
+    } else {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        const videoTrack = videoStream.getVideoTracks()[0];
+        localStreamRef.current?.addTrack(videoTrack);
+        pc.addTrack(videoTrack, localStreamRef.current!);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStreamRef.current;
+          localVideoRef.current.play().catch(() => {});
+        }
+        setVideoEnabled(true);
+      } catch {
+        toast.error(t('call.camera_failed') || 'Failed to access camera');
+      }
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc) return;
+
+    if (screenSharing) {
+      // Stop screen share — restore camera if video was enabled, else remove track
+      const screenTracks = screenStreamRef.current?.getTracks() ?? [];
+      screenTracks.forEach((t) => t.stop());
+      screenStreamRef.current = null;
+
+      const videoSenders = pc.getSenders().filter((s) => s.track?.kind === 'video');
+      if (videoEnabled && localStreamRef.current) {
+        const camTrack = localStreamRef.current.getVideoTracks()[0];
+        if (camTrack && videoSenders[0]) {
+          await videoSenders[0].replaceTrack(camTrack).catch(() => {});
+        }
+      } else {
+        videoSenders.forEach((s) => pc.removeTrack(s));
+      }
+      setScreenSharing(false);
+    } else {
+      try {
+        const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({
+          video: { cursor: 'always' },
+          audio: false,
+        });
+        screenStreamRef.current = screenStream;
+        const screenTrack: MediaStreamTrack = screenStream.getVideoTracks()[0];
+
+        const videoSenders = pc.getSenders().filter((s) => s.track?.kind === 'video');
+        if (videoSenders.length > 0) {
+          await videoSenders[0].replaceTrack(screenTrack).catch(() => {});
+        } else {
+          pc.addTrack(screenTrack, screenStream);
+        }
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = screenStream;
+          localVideoRef.current.play().catch(() => {});
+        }
+
+        screenTrack.onended = () => {
+          setScreenSharing(false);
+          screenStreamRef.current = null;
+        };
+
+        setScreenSharing(true);
+      } catch {
+        // User cancelled or permission denied — not an error
+        setScreenSharing(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!activeCall || !profile || !canOpenCall) return;
 
@@ -1116,7 +1274,7 @@ export default function ChatPage() {
   const isCallLive = Boolean(activeCall && !TERMINAL_CALL_STATUSES.has(activeCall.status));
 
   return (
-    <div className={`h-screen flex flex-col bg-gray-50 ${isRTL ? 'rtl' : 'ltr'}`}>
+    <div className={`h-screen flex flex-col bg-cloud ${isRTL ? 'rtl' : 'ltr'}`}>
       <Navbar />
       <Toaster position="top-center" toastOptions={{ style: { fontSize: '13px' } }} />
 
@@ -1124,27 +1282,27 @@ export default function ChatPage() {
       <div className="flex-1 min-h-0 flex flex-col w-full max-w-3xl mx-auto">
 
         {/* ── Header ── */}
-        <div className="bg-white border-b border-gray-100 px-3 sm:px-4 h-14 flex items-center gap-2 shrink-0">
+        <div className="bg-white border-b border-soft-blue px-3 sm:px-4 h-14 flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => router.back()}
-            className="p-2 rounded-full text-gray-400 hover:bg-gray-100 transition-colors shrink-0"
+            className="p-2 rounded-full text-brand-slate hover:bg-soft-blue transition-colors shrink-0"
           >
             <ArrowLeft className="w-[18px] h-[18px]" />
           </button>
 
           {/* Avatar */}
-          <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center shrink-0 select-none">
+          <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center shrink-0 select-none">
             <span className="text-xs font-bold text-white">{otherUserInitial}</span>
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 text-sm leading-tight truncate">
+            <p className="font-semibold text-ink text-sm leading-tight truncate">
               {getOtherUserName()}
             </p>
-            <p className="text-[11px] text-gray-400 leading-tight truncate">
+            <p className="text-[11px] text-brand-slate leading-tight truncate">
               <span className="capitalize">{consultation.status.replace(/_/g, ' ')}</span>
-              <span className="mx-1 text-gray-200">·</span>
+              <span className="mx-1 text-brand-slate/30">·</span>
               <span className="capitalize">{consultation.stage.replace(/_/g, ' ')}</span>
             </p>
           </div>
@@ -1155,7 +1313,7 @@ export default function ChatPage() {
                 type="button"
                 onClick={handleStartCall}
                 title={t('call.start')}
-                className="relative p-2.5 rounded-full text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                className="relative p-2.5 rounded-full text-brand-slate hover:text-ink hover:bg-soft-blue transition-colors"
               >
                 <Phone className="w-[18px] h-[18px]" />
                 {/* Live indicator dot — visible when a call is in progress but overlay is minimised */}
@@ -1169,20 +1327,20 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => setShowActions(!showActions)}
-                className="p-2.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors"
+                className="p-2.5 rounded-full text-brand-slate hover:bg-soft-blue transition-colors"
               >
                 <MoreVertical className="w-[18px] h-[18px]" />
               </button>
 
               {showActions && (
-                <div className="absolute top-full mt-1 right-0 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-50 overflow-hidden">
+                <div className="absolute top-full mt-1 right-0 w-52 bg-white rounded-2xl shadow-xl border border-soft-blue py-1.5 z-50 overflow-hidden">
                   {profile?.role === 'client' && (
                     <button
                       type="button"
                       onClick={handleRequestMeeting}
-                      className="w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                      className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
                     >
-                      <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
+                      <Calendar className="w-4 h-4 text-brand-slate shrink-0" />
                       {t('chat.request_meeting')}
                     </button>
                   )}
@@ -1190,17 +1348,17 @@ export default function ChatPage() {
                     <button
                       type="button"
                       onClick={handleProvideMeetingLink}
-                      className="w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                      className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
                     >
-                      <LinkIcon className="w-4 h-4 text-gray-400 shrink-0" />
+                      <LinkIcon className="w-4 h-4 text-brand-slate shrink-0" />
                       {t('meeting.provide_link')}
                     </button>
                   )}
                   <Link
                     href={`/${profile?.role}/cases/${caseId}`}
-                    className="w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                    className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
                   >
-                    <Info className="w-4 h-4 text-gray-400 shrink-0" />
+                    <Info className="w-4 h-4 text-brand-slate shrink-0" />
                     {t('chat.case_info')}
                   </Link>
                 </div>
@@ -1211,7 +1369,7 @@ export default function ChatPage() {
 
         {/* ── Return-to-call banner (shown when call is live but overlay is minimised) ── */}
         {canOpenCall && isCallLive && !showCallPanel && (
-          <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-gray-950 border-b border-white/5">
+          <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-ink border-b border-white/5">
             <span className={`w-2 h-2 rounded-full shrink-0 ${activeCall!.status === 'active' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400 animate-pulse'}`} />
             <div className="flex-1 min-w-0 flex items-center gap-2.5">
               <span className="text-sm font-medium text-white truncate">{getOtherUserName()}</span>
@@ -1247,7 +1405,7 @@ export default function ChatPage() {
         {/* ── Messages ── */}
         <div
           ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50"
+          className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-cloud"
           style={{ overscrollBehavior: 'contain' }}
         >
           {chatLockedUntilAssignment ? (
@@ -1255,16 +1413,16 @@ export default function ChatPage() {
               <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-3">
                 <MessageSquare className="w-6 h-6 text-amber-400" />
               </div>
-              <p className="font-semibold text-gray-800 text-sm">{t('chat.locked_until_assignment_title')}</p>
-              <p className="text-xs text-gray-400 mt-1.5 max-w-xs leading-relaxed">{t('chat.locked_until_assignment_desc')}</p>
+              <p className="font-semibold text-ink text-sm">{t('chat.locked_until_assignment_title')}</p>
+              <p className="text-xs text-brand-slate mt-1.5 max-w-xs leading-relaxed">{t('chat.locked_until_assignment_desc')}</p>
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center py-16">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
-                <MessageSquare className="w-6 h-6 text-gray-300" />
+              <div className="w-12 h-12 rounded-2xl bg-soft-blue flex items-center justify-center mb-3">
+                <MessageSquare className="w-6 h-6 text-brand-slate/40" />
               </div>
-              <p className="font-semibold text-gray-800 text-sm">{t('chat.no_messages')}</p>
-              <p className="text-xs text-gray-400 mt-1.5 max-w-xs leading-relaxed">{t('chat.start_convo')}</p>
+              <p className="font-semibold text-ink text-sm">{t('chat.no_messages')}</p>
+              <p className="text-xs text-brand-slate mt-1.5 max-w-xs leading-relaxed">{t('chat.start_convo')}</p>
             </div>
           ) : (
             messages.map((msg) => {
@@ -1273,7 +1431,7 @@ export default function ChatPage() {
                 <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {/* Remote avatar */}
                   {!isMe && (
-                    <div className="w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center shrink-0 mb-1 select-none">
+                    <div className="w-6 h-6 rounded-full bg-ink flex items-center justify-center shrink-0 mb-1 select-none">
                       <span className="text-[10px] font-bold text-white">
                         {msg.senderName?.charAt(0).toUpperCase() || '?'}
                       </span>
@@ -1283,8 +1441,8 @@ export default function ChatPage() {
                   <div className={`max-w-[78%] sm:max-w-[65%] flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
                     <div className={`rounded-2xl text-sm px-3.5 py-2.5 space-y-2
                       ${isMe
-                        ? 'bg-gray-900 text-white rounded-br-sm shadow-sm'
-                        : 'bg-white text-gray-900 rounded-bl-sm border border-gray-100 shadow-sm'}`}>
+                        ? 'bg-ink text-white rounded-br-sm shadow-sm'
+                        : 'bg-white text-ink rounded-bl-sm border border-soft-blue shadow-sm'}`}>
                       {msg.imageUrl && (
                         <button
                           type="button"
@@ -1307,11 +1465,36 @@ export default function ChatPage() {
                       {msg.type === 'audio' && msg.audioUrl ? (
                         <VoiceNoteBubble src={msg.audioUrl} isMe={isMe} label={t('chat.voice_note')} />
                       ) : null}
+                      {msg.type === 'file' && msg.fileUrl ? (
+                        <a
+                          href={msg.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 min-w-[200px] max-w-[260px] no-underline
+                            ${isMe ? 'bg-white/10 hover:bg-white/20' : 'bg-soft-blue hover:bg-soft-blue/80'} transition-colors`}
+                        >
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0
+                            ${isMe ? 'bg-white/15' : 'bg-blue-100'}`}>
+                            <FileText className={`w-4 h-4 ${isMe ? 'text-white/80' : 'text-blue-600'}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-medium truncate ${isMe ? 'text-white' : 'text-ink'}`}>
+                              {msg.fileName || t('chat.file_label')}
+                            </p>
+                            {msg.fileSize ? (
+                              <p className={`text-[10px] mt-0.5 ${isMe ? 'text-white/50' : 'text-brand-slate'}`}>
+                                {formatFileSize(msg.fileSize)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Download className={`w-3.5 h-3.5 shrink-0 ${isMe ? 'text-white/60' : 'text-brand-slate'}`} />
+                        </a>
+                      ) : null}
                       {msg.text ? (
                         <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
                       ) : null}
                     </div>
-                    <span className="text-[10px] text-gray-400 px-0.5">
+                    <span className="text-[10px] text-brand-slate px-0.5">
                       {msg.createdAt ? formatDate(msg.createdAt, language) : t('chat.sending')}
                     </span>
                   </div>
@@ -1323,33 +1506,66 @@ export default function ChatPage() {
 
         {/* ── Input ── */}
         {!isQuality && !chatLockedUntilAssignment && (
-          <div className="shrink-0 bg-white border-t border-gray-100 px-3 pt-2 pb-3">
+          <div className="shrink-0 bg-white border-t border-soft-blue px-3 pt-2 pb-3">
             {imagePreview && (
               <div className="mb-2 inline-block relative">
-                <div className="h-16 w-16 relative rounded-xl overflow-hidden border border-gray-200">
+                <div className="h-16 w-16 relative rounded-xl overflow-hidden border border-soft-blue">
                   <Image src={imagePreview} alt="Preview" fill className="object-cover" unoptimized />
                 </div>
                 <button
                   type="button"
                   onClick={() => { setSelectedImage(null); setImagePreview(null); }}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-900 text-white rounded-full flex items-center justify-center shadow"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-ink text-white rounded-full flex items-center justify-center shadow"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-              <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
-
-              {!isRecording && !pendingVoiceNote && (
+            {selectedFile && (
+              <div className="mb-2 flex items-center gap-2 bg-soft-blue rounded-xl px-3 py-2 w-fit max-w-[260px]">
+                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="text-xs font-medium text-ink truncate flex-1">{selectedFile.name}</span>
+                <span className="text-[10px] text-brand-slate shrink-0">{formatFileSize(selectedFile.size)}</span>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-9 h-9 shrink-0 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors flex items-center justify-center text-gray-500"
+                  onClick={() => setSelectedFile(null)}
+                  className="w-4 h-4 rounded-full bg-ink/10 flex items-center justify-center hover:bg-ink/20 transition-colors shrink-0"
                 >
-                  <ImageIcon className="w-4 h-4" />
+                  <X className="w-2.5 h-2.5 text-ink" />
                 </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+              <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx"
+                className="hidden"
+                ref={fileAttachRef}
+                onChange={handleFileAttachSelect}
+              />
+
+              {!isRecording && !pendingVoiceNote && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    title={t('chat.upload_image')}
+                    className="w-9 h-9 rounded-xl bg-soft-blue hover:bg-soft-blue transition-colors flex items-center justify-center text-brand-slate"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileAttachRef.current?.click()}
+                    title={t('chat.attach_file')}
+                    className="w-9 h-9 rounded-xl bg-soft-blue hover:bg-soft-blue transition-colors flex items-center justify-center text-brand-slate"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                </div>
               )}
 
               {isRecording ? (
@@ -1359,7 +1575,7 @@ export default function ChatPage() {
                     {formatDuration(recordingTime)}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={cancelRecording} className="text-xs font-medium text-gray-400 hover:text-gray-700 transition-colors">
+                    <button type="button" onClick={cancelRecording} className="text-xs font-medium text-brand-slate hover:text-ink transition-colors">
                       {t('common.cancel')}
                     </button>
                     <button
@@ -1373,17 +1589,17 @@ export default function ChatPage() {
                   </div>
                 </div>
               ) : pendingVoiceNote ? (
-                <div className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2.5">
+                <div className="flex-1 bg-cloud border border-soft-blue rounded-2xl px-3 py-2.5">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <audio controls preload="metadata" src={pendingVoiceNote.previewUrl} className="w-full h-9" />
-                      <div className="flex items-center justify-between text-[10px] text-gray-400 mt-1.5 px-0.5">
+                      <div className="flex items-center justify-between text-[10px] text-brand-slate mt-1.5 px-0.5">
                         <span>{t('chat.voice_note')}</span>
                         <span>{formatDuration(pendingVoiceNote.durationSec)}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 self-end sm:self-auto sm:ml-2 shrink-0">
-                      <button type="button" onClick={discardPendingVoiceNote} className="text-xs font-medium text-gray-400 hover:text-gray-700 transition-colors">
+                      <button type="button" onClick={discardPendingVoiceNote} className="text-xs font-medium text-brand-slate hover:text-ink transition-colors">
                         {t('common.cancel')}
                       </button>
                       <Button type="button" className="h-8 rounded-xl text-xs px-3" onClick={sendPendingVoiceNote} loading={uploadingAudio}>
@@ -1394,34 +1610,47 @@ export default function ChatPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex items-center bg-gray-100 rounded-2xl px-3.5 py-2.5 gap-2">
+                <div className="flex-1 flex items-center bg-soft-blue rounded-2xl px-3.5 py-2.5 gap-2">
                   <input
                     type="text"
                     placeholder={t('chat.placeholder')}
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    className="flex-1 min-w-0 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-brand-slate outline-none"
                   />
                 </div>
               )}
 
               {!isRecording && !pendingVoiceNote && (
-                newMessage.trim() || selectedImage ? (
+                newMessage.trim() || selectedImage || selectedFile ? (
+                  selectedFile && !newMessage.trim() && !selectedImage ? (
+                    <button
+                      type="button"
+                      onClick={handleSendFile}
+                      disabled={uploadingFile}
+                      className="w-9 h-9 shrink-0 rounded-xl bg-ink hover:bg-ink disabled:opacity-50 flex items-center justify-center text-white transition-colors"
+                    >
+                      {uploadingFile
+                        ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        : <Send className="w-4 h-4" />}
+                    </button>
+                  ) : (
                   <button
                     type="submit"
                     disabled={sending || uploadingImage}
-                    className="w-9 h-9 shrink-0 rounded-xl bg-gray-900 hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center text-white transition-colors"
+                    className="w-9 h-9 shrink-0 rounded-xl bg-ink hover:bg-ink disabled:opacity-50 flex items-center justify-center text-white transition-colors"
                   >
                     {(sending || uploadingImage)
                       ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       : <Send className="w-4 h-4" />}
                   </button>
+                  )
                 ) : (
                   <button
                     type="button"
                     onClick={startRecording}
                     disabled={uploadingAudio}
-                    className="w-9 h-9 shrink-0 rounded-xl bg-gray-100 hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center text-gray-500 transition-colors"
+                    className="w-9 h-9 shrink-0 rounded-xl bg-soft-blue hover:bg-soft-blue disabled:opacity-50 flex items-center justify-center text-brand-slate transition-colors"
                   >
                     <Mic className="w-4 h-4" />
                   </button>
@@ -1429,7 +1658,7 @@ export default function ChatPage() {
               )}
             </form>
 
-            <p className="text-[10px] text-center text-gray-300 mt-1.5 flex items-center justify-center gap-1">
+            <p className="text-[10px] text-center text-brand-slate/40 mt-1.5 flex items-center justify-center gap-1">
               <Shield className="w-3 h-3" />
               {t('chat.secure_msg')}
             </p>
@@ -1437,8 +1666,8 @@ export default function ChatPage() {
         )}
 
         {isQuality && (
-          <div className="shrink-0 bg-white border-t border-gray-100 px-4 py-3 text-center">
-            <p className="text-xs text-gray-400 flex items-center justify-center gap-2">
+          <div className="shrink-0 bg-white border-t border-soft-blue px-4 py-3 text-center">
+            <p className="text-xs text-brand-slate flex items-center justify-center gap-2">
               <Shield className="w-3.5 h-3.5" />
               {t('quality.read_only_msg') || 'Read-only mode for quality assurance'}
             </p>
@@ -1449,11 +1678,14 @@ export default function ChatPage() {
       {/* Hidden audio elements — must live outside the scrollable container */}
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <audio ref={localAudioRef} autoPlay muted className="hidden" />
+      {/* Fallback video elements (used when call panel is closed) */}
+      <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
+      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
 
       {/* ── Lightbox ── */}
       {lightboxImage && (
         <div
-          className="fixed inset-0 z-[95] bg-black/90 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[95] bg-ink/90 flex items-center justify-center p-4"
           onClick={() => setLightboxImage(null)}
         >
           <button
@@ -1480,12 +1712,12 @@ export default function ChatPage() {
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-ink/60 backdrop-blur-sm"
             onClick={() => setShowCallPanel(false)}
           />
 
           {/* Card */}
-          <div className="relative w-full sm:max-w-xs bg-gradient-to-b from-gray-900 to-gray-950
+          <div className="relative w-full sm:max-w-xs bg-gradient-to-b from-ink to-ink/95
                           rounded-t-3xl sm:rounded-3xl overflow-hidden
                           border-t border-white/10 sm:border sm:border-white/10
                           shadow-2xl shadow-black/70">
@@ -1524,11 +1756,11 @@ export default function ChatPage() {
                 <div className={`relative w-20 h-20 rounded-full flex items-center justify-center select-none z-10
                                 ${activeCall.status === 'active'
                                   ? 'bg-gradient-to-br from-emerald-700 to-emerald-900 ring-4 ring-emerald-500/25'
-                                  : 'bg-gradient-to-br from-gray-600 to-gray-800'}`}>
+                                  : 'bg-gradient-to-br from-brand-slate to-ink'}`}>
                   <span className="text-3xl font-bold text-white">{otherUserInitial}</span>
                 </div>
                 {activeCall.status === 'active' && (
-                  <span className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-gray-950 z-20" />
+                  <span className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-ink z-20" />
                 )}
               </div>
 
@@ -1543,6 +1775,35 @@ export default function ChatPage() {
                     ? currentCallTitle
                     : t('call.ringing')}
               </p>
+
+              {/* Remote video */}
+              {(videoEnabled || screenSharing) && activeCall.status === 'active' && (
+                <div className="mt-4 w-full relative rounded-xl overflow-hidden bg-black/40" style={{ aspectRatio: '16/9' }}>
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    muted={false}
+                    className="w-full h-full object-cover"
+                  />
+                  {/* Local video PiP */}
+                  <div className="absolute bottom-2 right-2 w-20 h-14 rounded-lg overflow-hidden border border-white/20 bg-black/60">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  {screenSharing && (
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-blue-500/80 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                      <Monitor className="w-2.5 h-2.5" />
+                      Screen
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Recording badges */}
               <div className="mt-3.5 flex flex-col items-center gap-1.5">
@@ -1609,16 +1870,16 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {/* Active call: Mute + End */}
+              {/* Active call: Mute + Video + ScreenShare + End */}
               {activeCall.status === 'active' && (
                 <>
                   <div className="flex flex-col items-center gap-2.5">
                     <button
                       type="button"
                       onClick={toggleMute}
-                      className={`w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-all
+                      className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all
                         ${isMuted
-                          ? 'bg-white text-gray-900 shadow-lg shadow-white/15'
+                          ? 'bg-white text-ink shadow-lg shadow-white/15'
                           : 'bg-white/12 hover:bg-white/20 text-white'}`}
                     >
                       {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -1630,11 +1891,41 @@ export default function ChatPage() {
                   <div className="flex flex-col items-center gap-2.5">
                     <button
                       type="button"
+                      onClick={toggleVideo}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all
+                        ${videoEnabled
+                          ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
+                          : 'bg-white/12 hover:bg-white/20 text-white'}`}
+                    >
+                      {videoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                    </button>
+                    <span className="text-[11px] font-medium text-white/40">
+                      {videoEnabled ? t('call.video_off') : t('call.video_on')}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={toggleScreenShare}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all
+                        ${screenSharing
+                          ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+                          : 'bg-white/12 hover:bg-white/20 text-white'}`}
+                    >
+                      {screenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+                    </button>
+                    <span className="text-[11px] font-medium text-white/40">
+                      {screenSharing ? t('call.screen_stop') : t('call.screen_share')}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2.5">
+                    <button
+                      type="button"
                       onClick={handleEndCall}
-                      className="w-14 h-14 rounded-full bg-rose-500 hover:bg-rose-600 active:scale-95
+                      className="w-12 h-12 rounded-full bg-rose-500 hover:bg-rose-600 active:scale-95
                                  flex items-center justify-center shadow-lg shadow-rose-500/25 transition-all"
                     >
-                      <PhoneOff className="w-6 h-6 text-white" />
+                      <PhoneOff className="w-5 h-5 text-white" />
                     </button>
                     <span className="text-[11px] font-medium text-white/40">{t('call.end')}</span>
                   </div>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
+import { randomBytes } from 'crypto';
 import { getAdminAuth, getAdminDb } from '@/src/lib/firebase-admin';
+import { checkRateLimit, rateLimitResponse } from '@/src/lib/rateLimit';
+import { writeAuditLog } from '@/src/lib/auditLog';
 import type { StaffRole } from '@/src/types';
 
 const allowedStaffRoles = new Set<StaffRole>(['admin', 'consultant', 'quality']);
@@ -27,9 +30,13 @@ export async function POST(req: NextRequest) {
       return errorResponse('Forbidden', 'forbidden', 403);
     }
 
+    // 10 staff creations per admin per hour — prevents bulk account creation abuse
+    if (!checkRateLimit(`create-staff:${decodedToken.uid}`, 10, 60 * 60_000)) {
+      return rateLimitResponse();
+    }
+
     const body = await req.json();
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const password = typeof body.password === 'string' ? body.password : '';
     const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
     const role = body.role as StaffRole;
     const phoneNumber = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : '';
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest) {
     const rawExperienceYears = body.experienceYears;
     const experienceYears = Number(rawExperienceYears ?? 0);
 
-    if (!email || !password || !displayName || !role) {
+    if (!email || !displayName || !role) {
       return errorResponse('Missing required fields', 'missing-required-fields', 400);
     }
 
@@ -50,13 +57,16 @@ export async function POST(req: NextRequest) {
       return errorResponse('Invalid experience years', 'invalid-experience', 400);
     }
 
+    // Generate a strong random temp password — the staff member will replace it via reset email
+    const tempPassword = randomBytes(24).toString('base64');
+
     let userRecord;
     try {
       userRecord = await adminAuth.createUser({
         email,
-        password,
+        password: tempPassword,
         displayName,
-        emailVerified: true, // Staff accounts are admin-provisioned; skip email verification
+        emailVerified: false,
       });
     } catch (authError: any) {
       console.error('Error creating auth user:', authError);
@@ -101,6 +111,19 @@ export async function POST(req: NextRequest) {
       }
 
       await batch.commit();
+
+      // Send password-reset email so staff can set their own password
+      const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+      if (apiKey) {
+        await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }),
+          },
+        ).catch((err) => console.error('Failed to send password-reset email:', err));
+      }
     } catch (firestoreError: any) {
       console.error('Error creating Firestore profile, rolling back Auth user:', firestoreError);
       try {
@@ -110,6 +133,14 @@ export async function POST(req: NextRequest) {
       }
       return errorResponse('Failed to create user profile. User creation rolled back.', 'profile-create-failed', 500);
     }
+
+    writeAuditLog({
+      action: 'staff_created',
+      actorUid: decodedToken.uid,
+      targetId: userRecord.uid,
+      metadata: { email, role, displayName },
+      ip: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip'),
+    });
 
     return NextResponse.json({ uid: userRecord.uid, role }, { status: 201 });
   } catch (error: any) {

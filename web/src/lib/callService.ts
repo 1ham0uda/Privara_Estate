@@ -131,6 +131,13 @@ export const callService = {
 
   async cleanupIceCandidates(callId: string): Promise<void> {
     try {
+      // Only the call initiator performs cleanup to avoid a double-delete race
+      // when both peers transition the call to a terminal status simultaneously.
+      const callSnap = await getDoc(doc(db, 'calls', callId));
+      if (!callSnap.exists()) return;
+      const initiatedBy = (callSnap.data() as CallSession).initiatedBy;
+      if (auth.currentUser?.uid !== initiatedBy) return;
+
       const subcollections = ['callerCandidates', 'calleeCandidates'] as const;
       await Promise.all(
         subcollections.map(async (sub) => {

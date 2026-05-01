@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, rateLimitResponse } from '@/src/lib/rateLimit';
 
 const SESSION_COOKIE = 'privara-session';
 const VERIFIED_COOKIE = 'privara-verified';
@@ -15,6 +16,22 @@ const MAX_AGE = 60 * 60 * 24 * 7;
  * this cookie is a UX-layer guard only.
  */
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  if (!checkRateLimit(`session:${ip}`, 10, 60_000)) return rateLimitResponse();
+
+  // CSRF: reject cross-origin cookie-setting requests.
+  // Browsers always send Origin on cross-origin POST; same-origin requests may omit it.
+  const origin = req.headers.get('origin');
+  const host = req.headers.get('host');
+  if (origin && host) {
+    const allowedOrigins = process.env.NEXT_PUBLIC_APP_URL
+      ? [process.env.NEXT_PUBLIC_APP_URL]
+      : [`http://${host}`, `https://${host}`];
+    if (!allowedOrigins.some((o) => origin === o || origin.endsWith(`.${host}`))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+  }
+
   let idToken: string | undefined;
   let emailVerified = false;
   try {

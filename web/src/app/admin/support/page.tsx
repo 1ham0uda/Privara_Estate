@@ -13,7 +13,7 @@ export default async function AdminSupportPage({ searchParams }: AdminSupportPag
   const initialTicketId = params.ticketId || params.messageId || null;
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+    <Suspense fallback={<div className="min-h-screen bg-cloud" />}>
       <AdminSupportPageClient initialTicketId={initialTicketId} />
     </Suspense>
   );

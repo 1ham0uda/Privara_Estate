@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
-import { consultationService, consultantService, userService, qualityService } from '@/src/lib/db';
+import { consultationService, consultantService, qualityService } from '@/src/lib/db';
 import { ConsultationCase, ConsultantProfile, UserProfile, QualityAuditReport } from '@/src/types';
-import { Card, Badge, Button } from '@/src/components/UI';
+import { Card, Badge, Button, Skeleton, SkeletonCard, EmptyState } from '@/src/components/UI';
+import { announce } from '@/src/hooks/useAnnounce';
 import { 
   Users, 
   Clock, 
@@ -22,7 +23,8 @@ import {
   Briefcase,
   UserCheck,
   UserX,
-  Star
+  Star,
+  RefreshCw
 } from 'lucide-react';
 import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
@@ -33,6 +35,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useLanguage } from '@/src/context/LanguageContext';
 import { settingsService } from '@/src/lib/db';
 import AdminSupportWorkspace from '@/src/components/support/AdminSupportWorkspace';
+import AdminAnalyticsTab from '@/src/components/admin/AdminAnalyticsTab';
+import AdminSidebar from '@/src/components/admin/AdminSidebar';
+import type { AdminTab } from '@/src/components/admin/AdminSidebar';
+import { useFocusTrap } from '@/src/hooks/useFocusTrap';
+import { auth, app } from '@/src/lib/firebase';
+import { multiFactor } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function AdminDashboard() {
   const { profile, loading } = useRoleGuard(['admin']);
@@ -47,7 +56,7 @@ export default function AdminDashboard() {
   const [selectedQualityId, setSelectedQualityId] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'conversations' | 'staff' | 'quality_reports' | 'support'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'conversations' | 'staff' | 'quality_reports' | 'support' | 'analytics'>('overview');
   const [showStaffDetailsModal, setShowStaffDetailsModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -55,13 +64,43 @@ export default function AdminDashboard() {
   const [reassignToId, setReassignToId] = useState('');
   const [isReassigning, setIsReassigning] = useState(false);
   const [consultationFee, setConsultationFee] = useState(500);
+  const [standardFee, setStandardFee] = useState(500);
+  const [proFee, setProFee] = useState(750);
+  const [allowRegistrations, setAllowRegistrations] = useState(true);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [casesLimit, setCasesLimit] = useState(50);
+  const [casesHasMore, setCasesHasMore] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+
+  const mfaEnrolled = auth.currentUser ? (multiFactor(auth.currentUser).enrolledFactors?.length ?? 0) > 0 : false;
+
+  const getAuthToken = async () => {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error('Not authenticated');
+    return token;
+  };
+
+  const adminFetch = async (path: string, body: Record<string, unknown>) => {
+    const token = await getAuthToken();
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  };
+
+  const settingsModalRef = useFocusTrap(showSettingsModal, () => setShowSettingsModal(false));
+  const exportModalRef   = useFocusTrap(showExportModal,   () => setShowExportModal(false));
+  const staffModalRef    = useFocusTrap(showStaffDetailsModal, () => setShowStaffDetailsModal(false));
 
   useEffect(() => {
     if (profile) {
-      const unsubscribe = consultationService.subscribeToConsultations('admin', profile.uid, (data) => {
+      const unsubscribe = consultationService.subscribeToConsultations('admin', profile.uid, (data, hasMore) => {
         setCases(data);
-      });
+        setCasesHasMore(hasMore);
+      }, casesLimit);
       
       const unsubscribeReports = qualityService.subscribeToAuditReports((data) => {
         setQualityReports(data);
@@ -77,8 +116,12 @@ export default function AdminDashboard() {
 
       const fetchSettings = async () => {
         const settings = await settingsService.getSettings();
-        if (settings && settings.consultationFee) {
-          setConsultationFee(settings.consultationFee);
+        if (settings) {
+          setConsultationFee(settings.consultationFee ?? 500);
+          setStandardFee(settings.standardFee ?? settings.consultationFee ?? 500);
+          setProFee(settings.proFee ?? settings.standardFee ?? settings.consultationFee ?? 750);
+          setAllowRegistrations(settings.allowRegistrations ?? true);
+          setMaintenanceMode(settings.maintenanceMode ?? false);
         }
       };
 
@@ -90,7 +133,7 @@ export default function AdminDashboard() {
         unsubscribeReports();
       };
     }
-  }, [profile]);
+  }, [profile, casesLimit]);
 
   const handleToggleUserStatus = async (uid: string, currentStatus: string) => {
     const activeStaffCases = cases.filter(c => (c.consultantId === uid || c.qualitySpecialistId === uid) && c.status !== 'completed');
@@ -104,18 +147,10 @@ export default function AdminDashboard() {
     try {
       const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
 
-      // Update the user record via the service layer
-      await userService.updateUserProfile(uid, { status: newStatus });
-
-      // Keep consultantProfiles in sync so the intake form reflects the change
-      const isConsultant = consultants.some(c => c.uid === uid);
-      if (isConsultant) {
-        await consultantService.updateConsultantProfile(uid, { status: newStatus });
-      }
+      await adminFetch('/api/admin/toggle-user-status', { uid, newStatus });
 
       toast.success(t('common.success'));
 
-      // Refresh lists via service layer (no raw Firestore SDK)
       const [updatedConsultants, updatedSpecialists] = await Promise.all([
         consultantService.getAllConsultants(),
         qualityService.getAllQualitySpecialists(),
@@ -137,13 +172,10 @@ export default function AdminDashboard() {
     if (!newStaffId) return;
     setIsReassigning(true);
     try {
-      if (role === 'consultant') {
-        const consultant = consultants.find(c => c.uid === newStaffId);
-        await consultationService.assignConsultant(caseId, newStaffId, consultant?.name || 'Consultant');
-      } else {
-        const quality = qualitySpecialists.find(q => q.uid === newStaffId);
-        await consultationService.assignQualitySpecialist(caseId, newStaffId, quality?.displayName || 'Quality Specialist');
-      }
+      const staffName = role === 'consultant'
+        ? (consultants.find(c => c.uid === newStaffId)?.name || 'Consultant')
+        : (qualitySpecialists.find(q => q.uid === newStaffId)?.displayName || 'Quality Specialist');
+      await adminFetch('/api/admin/assign-case', { caseId, staffId: newStaffId, role, staffName });
       toast.success(t('admin.dashboard.case.reassigned_success'));
       setReassigningCaseId(null);
       setReassignToId('');
@@ -165,8 +197,14 @@ export default function AdminDashboard() {
     if (!selectedConsultantId) return;
     const consultant = consultants.find(c => c.uid === selectedConsultantId);
     try {
-      await consultationService.assignConsultant(caseId, selectedConsultantId, consultant?.name || 'Consultant');
+      await adminFetch('/api/admin/assign-case', {
+        caseId,
+        staffId: selectedConsultantId,
+        role: 'consultant',
+        staffName: consultant?.name || 'Consultant',
+      });
       toast.success(t('admin.dashboard.consultant_assigned'));
+      announce(t('admin.dashboard.consultant_assigned'));
       setAssigningCaseId(null);
       setSelectedConsultantId('');
     } catch (error) {
@@ -178,8 +216,14 @@ export default function AdminDashboard() {
     if (!selectedQualityId) return;
     const quality = qualitySpecialists.find(q => q.uid === selectedQualityId);
     try {
-      await consultationService.assignQualitySpecialist(caseId, selectedQualityId, quality?.displayName || 'Quality Specialist');
+      await adminFetch('/api/admin/assign-case', {
+        caseId,
+        staffId: selectedQualityId,
+        role: 'quality',
+        staffName: quality?.displayName || 'Quality Specialist',
+      });
       toast.success(t('admin.dashboard.quality_assigned'));
+      announce(t('admin.dashboard.quality_assigned'));
       setAssigningQualityCaseId(null);
       setSelectedQualityId('');
     } catch (error) {
@@ -222,7 +266,7 @@ export default function AdminDashboard() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      await settingsService.updateSettings({ consultationFee });
+      await adminFetch('/api/admin/save-settings', { consultationFee: standardFee, standardFee, proFee, allowRegistrations, maintenanceMode });
       toast.success(t('admin.dashboard.settings_success'));
       setShowSettingsModal(false);
     } catch (error) {
@@ -232,10 +276,74 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleBackfill = async () => {
+    if (!window.confirm(t('admin.backfill.confirm') || 'Recalculate all user consultation counters and consultant ratings from existing data? This is safe to run multiple times.')) return;
+    setIsBackfilling(true);
+    try {
+      const functions = getFunctions(app);
+      const backfill = httpsCallable<void, { usersUpdated: number; consultantsUpdated: number }>(functions, 'backfillCounters');
+      const result = await backfill();
+      toast.success(
+        (t('admin.backfill.success') || 'Backfill complete.') +
+        ` ${result.data.usersUpdated} users, ${result.data.consultantsUpdated} consultants updated.`
+      );
+    } catch (error) {
+      toast.error(t('admin.backfill.error') || 'Backfill failed — see console for details.');
+      console.error('[backfill]', error);
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-cloud">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-cloud flex" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="hidden lg:flex flex-col h-screen w-56 bg-white border-r border-soft-blue shrink-0 p-4 space-y-6" aria-hidden="true">
+          <Skeleton className="h-10 w-full rounded-xl mt-1" />
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-9 w-full rounded-xl" />)}
+        </div>
+        <div className="flex-1 min-w-0 px-6 py-8 space-y-6">
+          <Skeleton className="h-8 w-48" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[1,2,3,4].map(i => <SkeletonCard key={i} lines={2} />)}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <SkeletonCard key="a" lines={5} />
+            <SkeletonCard key="b" lines={5} />
+            <SkeletonCard key="c" lines={5} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!mfaEnrolled) {
+    return (
+      <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
+        <Navbar />
+        <main className="max-w-md mx-auto px-4 pt-24 pb-12">
+          <Card className="p-8 text-center" hover={false}>
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Shield className="w-8 h-8 text-amber-600" aria-hidden="true" />
+            </div>
+            <h1 className="font-serif text-2xl font-bold text-ink mb-3">
+              {t('admin.mfa.gate_title')}
+            </h1>
+            <p className="text-brand-slate mb-8 text-sm leading-relaxed">
+              {t('admin.mfa.gate_desc')}
+            </p>
+            <div className="flex flex-col gap-3">
+              <Link href="/profile">
+                <Button variant="primary" className="w-full">
+                  {t('admin.mfa.gate_enroll')}
+                </Button>
+              </Link>
+              <Button variant="outline" className="w-full" onClick={() => auth.signOut()}>
+                {t('admin.mfa.gate_signout')}
+              </Button>
+            </div>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -251,48 +359,16 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-cloud flex" dir={isRTL ? 'rtl' : 'ltr'}>
+      <AdminSidebar activeTab={activeTab} onTabChange={setActiveTab} onSettingsClick={() => setShowSettingsModal(true)} />
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
       <Navbar />
       <Toaster />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('admin.dashboard.title')}</h1>
-            <p className="text-brand-slate mt-1">{t('admin.dashboard.subtitle')}</p>
-          </div>
-          <div className="flex overflow-x-auto bg-white p-1 rounded-xl shadow-sm border border-soft-blue hide-scrollbar">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'overview' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
-            >
-              {t('admin.dashboard.tab.overview')}
-            </button>
-            <button
-              onClick={() => setActiveTab('conversations')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'conversations' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
-            >
-              {t('admin.dashboard.tab.conversations')}
-            </button>
-            <button
-              onClick={() => setActiveTab('staff')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
-            >
-              {t('admin.dashboard.tab.staff')}
-            </button>
-            <button
-              onClick={() => setActiveTab('quality_reports')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'quality_reports' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
-            >
-              {t('admin.dashboard.tab.qualityReports')}
-            </button>
-            <button
-              onClick={() => setActiveTab('support')}
-              className={`px-6 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === 'support' ? 'bg-blue-600 text-white shadow-md' : 'text-brand-slate hover:text-ink'}`}
-            >
-              {t('admin.dashboard.tab.support')}
-            </button>
-          </div>
+      <main className="flex-1 overflow-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">{t('admin.dashboard.title')}</h1>
+          <p className="text-brand-slate mt-1">{t('admin.dashboard.subtitle')}</p>
         </div>
 
         {activeTab === 'overview' ? (
@@ -304,7 +380,7 @@ export default function AdminDashboard() {
                 <AlertCircle className="w-6 h-6 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('admin.dashboard.stat.unassigned')}</p>
+                <p className="text-sm text-brand-slate">{t('admin.dashboard.stat.unassigned')}</p>
                 <p className="text-2xl font-bold">{unassignedCases.length}</p>
               </div>
             </div>
@@ -315,7 +391,7 @@ export default function AdminDashboard() {
                 <LayoutDashboard className="w-6 h-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('admin.dashboard.stat.active')}</p>
+                <p className="text-sm text-brand-slate">{t('admin.dashboard.stat.active')}</p>
                 <p className="text-2xl font-bold">{activeCases.length}</p>
               </div>
             </div>
@@ -326,18 +402,18 @@ export default function AdminDashboard() {
                 <CheckCircle2 className="w-6 h-6 text-emerald-500" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('admin.dashboard.stat.completed')}</p>
+                <p className="text-sm text-brand-slate">{t('admin.dashboard.stat.completed')}</p>
                 <p className="text-2xl font-bold">{completedCases.length}</p>
               </div>
             </div>
           </Card>
           <Card className="bg-white border-none shadow-sm p-6" hover={false}>
             <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-              <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
-                <Users className="w-6 h-6 text-gray-500" />
+              <div className="w-12 h-12 bg-cloud rounded-xl flex items-center justify-center">
+                <Users className="w-6 h-6 text-brand-slate" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{t('admin.dashboard.stat.totalStaff')}</p>
+                <p className="text-sm text-brand-slate">{t('admin.dashboard.stat.totalStaff')}</p>
                 <p className="text-2xl font-bold">{consultants.length + qualitySpecialists.length}</p>
               </div>
             </div>
@@ -348,7 +424,7 @@ export default function AdminDashboard() {
           <div className="lg:col-span-2 space-y-8">
             <Card className="p-8 border-none shadow-sm bg-white" hover={false}>
               <h2 className={`text-xl font-bold mb-6 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <BarChart3 className="w-5 h-5 text-gray-400" /> {t('admin.dashboard.chart.title')}
+                <BarChart3 className="w-5 h-5 text-brand-slate" /> {t('admin.dashboard.chart.title')}
               </h2>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -380,12 +456,12 @@ export default function AdminDashboard() {
                     <Card key={c.id} className="p-6 border-none shadow-sm bg-white" hover={false}>
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
-                            <User className="w-6 h-6 text-gray-300" />
+                          <div className="w-12 h-12 bg-soft-blue rounded-xl flex items-center justify-center">
+                            <User className="w-6 h-6 text-brand-slate/40" />
                           </div>
                           <div>
                             <h3 className="font-bold text-ink">{c.clientName || t('common.client')}</h3>
-                            <p className="text-xs text-gray-500">{t('client.goal')}: <span className="capitalize">{t(`intake.goal_${c.intake.goal}`)}</span> • {t('client.started_on')} {formatDate(c.createdAt, language)}</p>
+                            <p className="text-xs text-brand-slate">{t('client.goal')}: <span className="capitalize">{t(`intake.goal_${c.intake.goal}`)}</span> • {t('client.started_on')} {formatDate(c.createdAt, language)}</p>
                             {c.intake.selectedConsultantName ? (
                               <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                                 <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700 border border-blue-100">
@@ -446,8 +522,12 @@ export default function AdminDashboard() {
                     </Card>
                   ))
                 ) : (
-                  <Card className="py-12 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                    <p className="text-gray-500">{t('admin.dashboard.no_unassigned')}</p>
+                  <Card className="bg-white border-none shadow-sm" hover={false}>
+                    <EmptyState
+                      icon={<CheckCircle2 className="w-7 h-7" />}
+                      title={t('admin.dashboard.no_unassigned')}
+                      description={t('admin.dashboard.no_unassigned_desc') || 'All incoming consultations have been assigned to a consultant.'}
+                    />
                   </Card>
                 )}
               </div>
@@ -462,18 +542,18 @@ export default function AdminDashboard() {
                   <Card key={c.id} className="p-4 bg-white border-none shadow-sm">
                     <div className={`flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <User className="w-5 h-5 text-gray-300" />
+                        <div className="w-10 h-10 bg-soft-blue rounded-lg flex items-center justify-center">
+                          <User className="w-5 h-5 text-brand-slate/40" />
                         </div>
                         <div>
                           <p className="text-sm font-bold">{c.clientName}</p>
-                          <p className="text-[10px] text-gray-400">{t('client.assigned_consultant')}: {c.consultantName || consultants.find(con => con.uid === c.consultantId)?.name || t('common.unknown')}</p>
+                          <p className="text-[10px] text-brand-slate">{t('client.assigned_consultant')}: {c.consultantName || consultants.find(con => con.uid === c.consultantId)?.name || t('common.unknown')}</p>
                         </div>
                       </div>
                       <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                         <Badge variant="info" className="text-[10px] uppercase">{t(`case.stage.${c.stage}`)}</Badge>
                         <Link href={`/admin/cases/${c.id}`}>
-                          <ChevronRight className={`w-5 h-5 text-gray-300 ${isRTL ? 'rotate-180' : ''}`} />
+                          <ChevronRight className={`w-5 h-5 text-brand-slate/40 ${isRTL ? 'rotate-180' : ''}`} />
                         </Link>
                       </div>
                     </div>
@@ -489,14 +569,14 @@ export default function AdminDashboard() {
               
               <div className="space-y-8">
                 <div>
-                  <p className={`text-xs font-bold text-gray-500 uppercase mb-4 tracking-wider ${isRTL ? 'text-right' : ''}`}>{t('admin.dashboard.section.consultantsLoad')}</p>
+                  <p className={`text-xs font-bold text-brand-slate uppercase mb-4 tracking-wider ${isRTL ? 'text-right' : ''}`}>{t('admin.dashboard.section.consultantsLoad')}</p>
                   <div className="space-y-4">
                     {consultants.map(con => {
                       const load = cases.filter(c => c.consultantId === con.uid && c.status !== 'completed').length;
                       return (
                         <div key={con.uid} className={`flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
                           <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                            <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center overflow-hidden relative">
+                            <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center overflow-hidden relative">
                               {con.avatarUrl ? (
                                 <Image 
                                   src={con.avatarUrl} 
@@ -506,7 +586,7 @@ export default function AdminDashboard() {
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
-                                <User className="w-4 h-4 text-gray-500" />
+                                <User className="w-4 h-4 text-brand-slate" />
                               )}
                             </div>
                             <span className="text-sm font-medium">{con.name}</span>
@@ -519,14 +599,14 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <p className={`text-xs font-bold text-gray-500 uppercase mb-4 tracking-wider ${isRTL ? 'text-right' : ''}`}>{t('admin.dashboard.section.qualityLoad')}</p>
+                  <p className={`text-xs font-bold text-brand-slate uppercase mb-4 tracking-wider ${isRTL ? 'text-right' : ''}`}>{t('admin.dashboard.section.qualityLoad')}</p>
                   <div className="space-y-4">
                     {qualitySpecialists.map(q => {
                       const load = cases.filter(c => c.qualitySpecialistId === q.uid && c.status !== 'completed').length;
                       return (
                         <div key={q.uid} className={`flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
                           <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                            <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center">
+                            <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
                               <Shield className="w-4 h-4 text-emerald-500" />
                             </div>
                             <span className="text-sm font-medium">{q.displayName}</span>
@@ -580,12 +660,21 @@ export default function AdminDashboard() {
                 >
                   <Shield className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('admin.dashboard.action.settings')}
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className={`w-full justify-start text-sm h-11 rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}
                   onClick={() => setShowExportModal(true)}
                 >
                   <TrendingUp className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('admin.dashboard.action.export')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className={`w-full justify-start text-sm h-11 rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}
+                  onClick={handleBackfill}
+                  loading={isBackfilling}
+                  disabled={isBackfilling}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('admin.backfill.button') || 'Recalculate Counters'}
                 </Button>
               </div>
             </Card>
@@ -594,6 +683,15 @@ export default function AdminDashboard() {
       </>
       ) : activeTab === 'conversations' ? (
           <div className="space-y-6">
+            {cases.length === 0 && (
+              <Card className="bg-white border-none shadow-sm" hover={false}>
+                <EmptyState
+                  icon={<MessageSquare className="w-7 h-7" />}
+                  title={t('admin.dashboard.no_conversations') || 'No consultations yet'}
+                  description={t('admin.dashboard.no_conversations_desc') || 'Consultations will appear here once clients submit requests.'}
+                />
+              </Card>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {cases.map(c => (
                 <Card key={c.id} className="p-6 bg-white border-none shadow-sm flex flex-col justify-between">
@@ -602,13 +700,13 @@ export default function AdminDashboard() {
                       <Badge variant={c.status === 'completed' ? 'success' : 'info'} className="text-[10px] uppercase">
                         {t(`case.status.${c.status}`)}
                       </Badge>
-                      <span className="text-[10px] text-gray-400">{formatDate(c.createdAt, language)}</span>
+                      <span className="text-[10px] text-brand-slate">{formatDate(c.createdAt, language)}</span>
                     </div>
-                    <h3 className="font-bold text-gray-900 mb-1">{c.clientName || t('common.client')}</h3>
-                    <p className="text-xs text-gray-500 mb-4">{t('client.assigned_consultant')}: {c.consultantName || t('admin.dashboard.stat.unassigned')}</p>
+                    <h3 className="font-bold text-ink mb-1">{c.clientName || t('common.client')}</h3>
+                    <p className="text-xs text-brand-slate mb-4">{t('client.assigned_consultant')}: {c.consultantName || t('admin.dashboard.stat.unassigned')}</p>
                     <div className="bg-soft-blue p-3 rounded-lg mb-6">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t('client.goal')}</p>
-                      <p className="text-xs text-gray-700 line-clamp-2">{t(`intake.goal_${c.intake.goal}`)}</p>
+                      <p className="text-[10px] font-bold text-brand-slate uppercase mb-1">{t('client.goal')}</p>
+                      <p className="text-xs text-ink line-clamp-2">{t(`intake.goal_${c.intake.goal}`)}</p>
                     </div>
                   </div>
                   <Button variant="outline" className="w-full text-xs h-10 rounded-lg" as={Link} href={`/cases/${c.id}/chat`}>
@@ -617,6 +715,13 @@ export default function AdminDashboard() {
                 </Card>
               ))}
             </div>
+            {casesHasMore && (
+              <div className="flex justify-center pt-2">
+                <Button variant="outline" onClick={() => setCasesLimit(l => l + 50)} className="px-8">
+                  {t('common.load_more') || 'Load more'}
+                </Button>
+              </div>
+            )}
           </div>
         ) : activeTab === 'staff' ? (
           <>
@@ -648,20 +753,20 @@ export default function AdminDashboard() {
                                   </div>
                                   <div>
                                     <p className="text-sm font-bold">{con.name}</p>
-                                    <p className="text-[10px] text-gray-500">{con.specialties.join(', ')}</p>
+                                    <p className="text-[10px] text-brand-slate">{con.specialties.join(', ')}</p>
                                   </div>
                                 </div>
                                 <div className={isRTL ? 'text-left' : 'text-right'}>
                                   <p className="text-xs font-bold">{load} {t('admin.dashboard.stat.active_cases')}</p>
-                                  <p className="text-[10px] text-gray-400">{t('common.rating')}: {con.rating}/5</p>
+                                  <p className="text-[10px] text-brand-slate">{t('common.rating')}: {con.rating}/5</p>
                                 </div>
                               </div>
                               {consultantCases.length > 0 && (
-                                <div className={`mt-2 pt-2 border-t border-gray-200/50 ${isRTL ? 'text-right' : ''}`}>
-                                  <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">{t('admin.dashboard.section.activeProgress')}</p>
+                                <div className={`mt-2 pt-2 border-t border-soft-blue/50 ${isRTL ? 'text-right' : ''}`}>
+                                  <p className="text-[9px] font-bold text-brand-slate uppercase mb-1">{t('admin.dashboard.section.activeProgress')}</p>
                                   <div className="flex flex-wrap gap-1">
                                     {consultantCases.map(c => (
-                                      <Badge key={c.id} variant="default" className="text-[9px] py-0 px-1.5 bg-white text-gray-600 border border-gray-200">
+                                      <Badge key={c.id} variant="default" className="text-[9px] py-0 px-1.5 bg-white text-brand-slate border border-soft-blue">
                                         {c.clientName}
                                       </Badge>
                                     ))}
@@ -702,7 +807,7 @@ export default function AdminDashboard() {
                           </div>
                           <div>
                             <p className="text-sm font-bold">{q.displayName}</p>
-                            <p className="text-[10px] text-gray-500">{q.specialties?.join(', ') || t('quality.specialist')}</p>
+                            <p className="text-[10px] text-brand-slate">{q.specialties?.join(', ') || t('quality.specialist')}</p>
                           </div>
                         </div>
                         <div className={isRTL ? 'text-left' : 'text-right'}>
@@ -710,11 +815,11 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                       {specialistCases.length > 0 && (
-                        <div className={`mt-2 pt-2 border-t border-gray-200/50 ${isRTL ? 'text-right' : ''}`}>
-                          <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">{t('admin.dashboard.section.activeProgress')}</p>
+                        <div className={`mt-2 pt-2 border-t border-soft-blue/50 ${isRTL ? 'text-right' : ''}`}>
+                          <p className="text-[9px] font-bold text-brand-slate uppercase mb-1">{t('admin.dashboard.section.activeProgress')}</p>
                           <div className="flex flex-wrap gap-1">
                             {specialistCases.map(c => (
-                              <Badge key={c.id} variant="default" className="text-[9px] py-0 px-1.5 bg-white text-gray-600 border border-gray-200">
+                              <Badge key={c.id} variant="default" className="text-[9px] py-0 px-1.5 bg-white text-brand-slate border border-soft-blue">
                                 {c.clientName}
                               </Badge>
                             ))}
@@ -744,34 +849,34 @@ export default function AdminDashboard() {
                         <div className="flex-1">
                           <h3 className="font-bold text-lg mb-2">
                             {t('quality.report_for_case')} #{report.caseId.slice(-6)} 
-                            {caseInfo?.clientName && <span className="text-gray-400 font-normal text-sm block md:inline md:mx-2">({caseInfo.clientName})</span>}
+                            {caseInfo?.clientName && <span className="text-brand-slate font-normal text-sm block md:inline md:mx-2">({caseInfo.clientName})</span>}
                           </h3>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mb-4">
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm text-brand-slate">
                               <span className="font-medium">{t('common.client')}:</span> {caseInfo?.clientName || t('common.na')}
                             </p>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm text-brand-slate">
                               <span className="font-medium">{t('quality.specialist')}:</span> {qualitySpecialist?.displayName || report.specialistId}
                             </p>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm text-brand-slate">
                               <span className="font-medium">{t('common.date')}:</span> {formatDate(report.createdAt, language)}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-3 mb-4">
                             <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                              <span className="text-xs font-medium text-gray-500">{t('quality.status')}:</span>
+                              <span className="text-xs font-medium text-brand-slate">{t('quality.status')}:</span>
                               <Badge variant={report.status === 'completed' ? 'success' : 'warning'} className="text-[10px]">
                                 {t(`quality.status.${report.status}`)}
                               </Badge>
                             </div>
                             <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                              <span className="text-xs font-medium text-gray-500">{t('quality.classification')}:</span>
+                              <span className="text-xs font-medium text-brand-slate">{t('quality.classification')}:</span>
                               <Badge variant={report.classification === 'critical' ? 'error' : 'default'} className="text-[10px]">
                                 {t(`quality.classification.${report.classification}`)}
                               </Badge>
                             </div>
                             <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                              <span className="text-xs font-medium text-gray-500">{t('quality.meetingStatus')}:</span>
+                              <span className="text-xs font-medium text-brand-slate">{t('quality.meetingStatus')}:</span>
                               <Badge variant={report.meetingStatus === 'recorded' ? 'success' : report.meetingStatus === 'failed' ? 'error' : 'warning'} className="text-[10px]">
                                 {t(`quality.meetingStatus.${report.meetingStatus}`)}
                               </Badge>
@@ -791,29 +896,36 @@ export default function AdminDashboard() {
                   );
                 })
               ) : (
-                <Card className="py-12 text-center bg-white border-dashed border-2 border-gray-200" hover={false}>
-                  <p className="text-gray-500">{t('admin.dashboard.no_reports') || 'No quality reports found.'}</p>
+                <Card className="bg-white border-none shadow-sm" hover={false}>
+                  <EmptyState
+                    icon={<Shield className="w-7 h-7" />}
+                    title={t('admin.dashboard.no_reports') || 'No quality reports yet'}
+                    description={t('admin.dashboard.no_reports_desc') || 'Quality audit reports will appear here once specialists submit them.'}
+                  />
                 </Card>
               )}
             </div>
           </div>
         ) : activeTab === 'support' ? (
           <AdminSupportWorkspace />
+        ) : activeTab === 'analytics' ? (
+          <AdminAnalyticsTab cases={cases} consultants={consultants} consultationFee={consultationFee} />
         ) : null}
       </main>
       
       {/* Staff Details Modal */}
       {showStaffDetailsModal && selectedStaff && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className={`max-w-lg w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
+        <div className="fixed inset-0 bg-ink/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowStaffDetailsModal(false); }}>
+          <div ref={staffModalRef} role="dialog" aria-modal="true" aria-labelledby="staff-modal-title" className="w-full max-w-lg">
+          <Card className={`w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
             <div className={`flex items-start justify-between mb-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
               <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold ${selectedStaff.role === 'consultant' ? 'bg-blue-100 text-blue-600' : selectedStaff.role === 'quality' ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
                   {(selectedStaff.name || selectedStaff.displayName)?.charAt(0)}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">{selectedStaff.name || selectedStaff.displayName}</h2>
-                  <p className="text-gray-500">{t(`admin.staff.role.${selectedStaff.role}`)}</p>
+                  <h2 id="staff-modal-title" className="text-2xl font-bold">{selectedStaff.name || selectedStaff.displayName}</h2>
+                  <p className="text-brand-slate">{t(`admin.staff.role.${selectedStaff.role}`)}</p>
                 </div>
               </div>
               <Badge variant={selectedStaff.status === 'deactivated' ? 'error' : 'success'}>
@@ -824,11 +936,11 @@ export default function AdminDashboard() {
             <div className="space-y-6 mb-8">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.modal.addUser.email')}</p>
+                  <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.modal.addUser.email')}</p>
                   <p className="text-sm font-medium">{selectedStaff.email}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.modal.addUser.phone')}</p>
+                  <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.modal.addUser.phone')}</p>
                   <p className="text-sm font-medium">{selectedStaff.phoneNumber || t('common.na')}</p>
                 </div>
               </div>
@@ -836,11 +948,11 @@ export default function AdminDashboard() {
               {selectedStaff.role === 'consultant' && (
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.modal.addUser.experience')}</p>
+                    <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.modal.addUser.experience')}</p>
                     <p className="text-sm font-medium">{selectedStaff.experienceYears} {t('dashboard.years_experience')}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase">{t('common.rating')}</p>
+                    <p className="text-[10px] font-bold text-brand-slate uppercase">{t('common.rating')}</p>
                     <div className="flex items-center gap-1 text-sm font-medium">
                       <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
                       {selectedStaff.rating}/5
@@ -850,39 +962,39 @@ export default function AdminDashboard() {
               )}
 
               <div className="space-y-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.modal.addUser.specialties')}</p>
+                <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.modal.addUser.specialties')}</p>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {selectedStaff.specialties?.map((s: string, i: number) => (
-                    <Badge key={i} variant="default" className="bg-gray-100 text-gray-600 border-none">{s}</Badge>
+                    <Badge key={i} variant="default" className="bg-soft-blue text-brand-slate border-none">{s}</Badge>
                   ))}
                 </div>
               </div>
 
               <div className="space-y-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.modal.addUser.bio')}</p>
-                <p className="text-sm text-gray-600 leading-relaxed">{selectedStaff.bio || selectedStaff.professionalSummary || t('common.na')}</p>
+                <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.modal.addUser.bio')}</p>
+                <p className="text-sm text-brand-slate leading-relaxed">{selectedStaff.bio || selectedStaff.professionalSummary || t('common.na')}</p>
               </div>
 
               {/* Active Cases for Reassignment */}
-              <div className="space-y-3 pt-4 border-t border-gray-100">
-                <p className="text-[10px] font-bold text-gray-400 uppercase">{t('admin.dashboard.section.activeProgress')}</p>
+              <div className="space-y-3 pt-4 border-t border-soft-blue">
+                <p className="text-[10px] font-bold text-brand-slate uppercase">{t('admin.dashboard.section.activeProgress')}</p>
                 {(() => {
                   const staffCases = cases.filter(c => (c.consultantId === selectedStaff.uid || c.qualitySpecialistId === selectedStaff.uid || c.clientId === selectedStaff.uid) && c.status !== 'completed');
-                  if (staffCases.length === 0) return <p className="text-xs text-gray-400 italic">{t('admin.dashboard.no_active_cases') || 'No active cases'}</p>;
+                  if (staffCases.length === 0) return <p className="text-xs text-brand-slate italic">{t('admin.dashboard.no_active_cases') || 'No active cases'}</p>;
                   return (
                     <div className="space-y-3">
                       {staffCases.map(c => (
                         <div key={c.id} className="flex items-center justify-between p-3 bg-soft-blue rounded-xl">
                           <div className={isRTL ? 'text-right' : ''}>
                             <p className="text-xs font-bold">{c.clientName}</p>
-                            <p className="text-[10px] text-gray-500">#{c.id.slice(-6)} • {t(`case.stage.${c.stage}`)}</p>
+                            <p className="text-[10px] text-brand-slate">#{c.id.slice(-6)} • {t(`case.stage.${c.stage}`)}</p>
                           </div>
                           {reassigningCaseId === c.id ? (
                             <div className="flex items-center gap-2">
                               <select 
                                 value={reassignToId}
                                 onChange={(e) => setReassignToId(e.target.value)}
-                                className="text-[10px] p-1 border border-gray-200 rounded bg-white"
+                                className="text-[10px] p-1 border border-soft-blue rounded bg-white"
                               >
                                 <option value="">{t('common.select')}</option>
                                 {selectedStaff.role === 'consultant' 
@@ -941,39 +1053,60 @@ export default function AdminDashboard() {
               </Button>
             </div>
           </Card>
+          </div>
         </div>
       )}
-      
+
       {/* System Settings Modal */}
       {showSettingsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className={`max-w-md w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
-            <h2 className="text-2xl font-bold mb-6">{t('admin.dashboard.modal.settings.title')}</h2>
+        <div className="fixed inset-0 bg-ink/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowSettingsModal(false); }}>
+          <div ref={settingsModalRef} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" className="w-full max-w-md">
+          <Card className={`w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
+            <h2 id="settings-modal-title" className="text-2xl font-bold mb-6">{t('admin.dashboard.modal.settings.title')}</h2>
             <div className="space-y-6">
               <div className={`flex items-center justify-between p-4 bg-soft-blue rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div>
                   <p className="text-sm font-bold">{t('admin.dashboard.modal.settings.registrations')}</p>
-                  <p className="text-[10px] text-gray-500">{t('admin.dashboard.modal.settings.registrations_desc')}</p>
+                  <p className="text-[10px] text-brand-slate">{t('admin.dashboard.modal.settings.registrations_desc')}</p>
                 </div>
-                <div className="w-12 h-6 bg-emerald-500 rounded-full relative cursor-pointer">
-                  <div className={`absolute ${isRTL ? 'left-1' : 'right-1'} top-1 w-4 h-4 bg-white rounded-full shadow-sm`} />
-                </div>
+                <button
+                  role="switch"
+                  aria-checked={allowRegistrations}
+                  onClick={() => setAllowRegistrations(v => !v)}
+                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${allowRegistrations ? 'bg-emerald-500' : 'bg-brand-slate/30'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${allowRegistrations ? (isRTL ? 'left-1' : 'right-1') : (isRTL ? 'right-1' : 'left-1')}`} />
+                </button>
               </div>
               <div className={`flex items-center justify-between p-4 bg-soft-blue rounded-xl ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div>
                   <p className="text-sm font-bold">{t('admin.dashboard.modal.settings.maintenance')}</p>
-                  <p className="text-[10px] text-gray-500">{t('admin.dashboard.modal.settings.maintenance_desc')}</p>
+                  <p className="text-[10px] text-brand-slate">{t('admin.dashboard.modal.settings.maintenance_desc')}</p>
                 </div>
-                <div className="w-12 h-6 bg-gray-300 rounded-full relative cursor-pointer">
-                  <div className={`absolute ${isRTL ? 'right-1' : 'left-1'} top-1 w-4 h-4 bg-white rounded-full shadow-sm`} />
-                </div>
+                <button
+                  role="switch"
+                  aria-checked={maintenanceMode}
+                  onClick={() => setMaintenanceMode(v => !v)}
+                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${maintenanceMode ? 'bg-blue-600' : 'bg-brand-slate/30'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${maintenanceMode ? (isRTL ? 'left-1' : 'right-1') : (isRTL ? 'right-1' : 'left-1')}`} />
+                </button>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">{t('admin.dashboard.modal.settings.fee')} (EGP)</label>
-                <input 
-                  type="number" 
-                  value={consultationFee}
-                  onChange={(e) => setConsultationFee(Number(e.target.value))}
+                <label className="block text-xs font-bold text-brand-slate uppercase mb-1">{t('admin.dashboard.modal.settings.standard_fee')} (EGP)</label>
+                <input
+                  type="number"
+                  value={standardFee}
+                  onChange={(e) => setStandardFee(Number(e.target.value))}
+                  className={`w-full px-4 py-2 bg-cloud border border-soft-blue rounded-lg focus:border-blue-600 focus:outline-none text-ink ${isRTL ? 'text-right' : ''}`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-brand-slate uppercase mb-1">{t('admin.dashboard.modal.settings.pro_fee')} (EGP)</label>
+                <input
+                  type="number"
+                  value={proFee}
+                  onChange={(e) => setProFee(Number(e.target.value))}
                   className={`w-full px-4 py-2 bg-cloud border border-soft-blue rounded-lg focus:border-blue-600 focus:outline-none text-ink ${isRTL ? 'text-right' : ''}`}
                 />
               </div>
@@ -985,15 +1118,17 @@ export default function AdminDashboard() {
               </div>
             </div>
           </Card>
+          </div>
         </div>
       )}
 
       {/* Export Reports Modal */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className={`max-w-md w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
-            <h2 className="text-2xl font-bold mb-6">{t('admin.dashboard.modal.export.title')}</h2>
-            <p className="text-sm text-gray-500 mb-6">{t('admin.dashboard.modal.export.subtitle')}</p>
+        <div className="fixed inset-0 bg-ink/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowExportModal(false); }}>
+          <div ref={exportModalRef} role="dialog" aria-modal="true" aria-labelledby="export-modal-title" className="w-full max-w-md">
+          <Card className={`w-full p-8 bg-white border-none shadow-2xl ${isRTL ? 'text-right' : ''}`} hover={false}>
+            <h2 id="export-modal-title" className="text-2xl font-bold mb-6">{t('admin.dashboard.modal.export.title')}</h2>
+            <p className="text-sm text-brand-slate mb-6">{t('admin.dashboard.modal.export.subtitle')}</p>
             <div className="space-y-3">
               <button 
                 onClick={() => {
@@ -1018,7 +1153,7 @@ export default function AdminDashboard() {
                   </div>
                   <span className="text-sm font-bold">{t('admin.dashboard.modal.export.consultations')}</span>
                 </div>
-                <ChevronRight className={`w-4 h-4 text-gray-400 group-hover:text-black transition-colors ${isRTL ? 'rotate-180' : ''}`} />
+                <ChevronRight className={`w-4 h-4 text-brand-slate group-hover:text-ink transition-colors ${isRTL ? 'rotate-180' : ''}`} />
               </button>
               <button 
                 onClick={() => {
@@ -1038,7 +1173,7 @@ export default function AdminDashboard() {
                   </div>
                   <span className="text-sm font-bold">{t('admin.dashboard.modal.export.staff')}</span>
                 </div>
-                <ChevronRight className={`w-4 h-4 text-gray-400 group-hover:text-black transition-colors ${isRTL ? 'rotate-180' : ''}`} />
+                <ChevronRight className={`w-4 h-4 text-brand-slate group-hover:text-ink transition-colors ${isRTL ? 'rotate-180' : ''}`} />
               </button>
               <button 
                 onClick={() => {
@@ -1064,15 +1199,17 @@ export default function AdminDashboard() {
                   </div>
                   <span className="text-sm font-bold">{t('admin.dashboard.tab.qualityReports') || 'Quality Reports'}</span>
                 </div>
-                <ChevronRight className={`w-4 h-4 text-gray-400 group-hover:text-black transition-colors ${isRTL ? 'rotate-180' : ''}`} />
+                <ChevronRight className={`w-4 h-4 text-brand-slate group-hover:text-ink transition-colors ${isRTL ? 'rotate-180' : ''}`} />
               </button>
               <div className="pt-4">
                 <Button variant="ghost" className="w-full" onClick={() => setShowExportModal(false)}>{t('common.cancel')}</Button>
               </div>
             </div>
           </Card>
+          </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
