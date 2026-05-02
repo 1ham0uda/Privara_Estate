@@ -32,6 +32,8 @@ import {
   VideoOff,
   Monitor,
   MonitorOff,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
@@ -91,6 +93,27 @@ function VoiceNoteBubble({ src, isMe, label }: { src: string; isMe: boolean; lab
   );
 }
 
+function renderClickableText(text: string, isMe: boolean) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, index) => {
+    if (/^https?:\/\/[^\s]+$/i.test(part)) {
+      return (
+        <a
+          key={`link-${index}`}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`underline break-all ${isMe ? 'text-white' : 'text-blue-700'}`}
+        >
+          {part}
+        </a>
+      );
+    }
+    return <React.Fragment key={`text-${index}`}>{part}</React.Fragment>;
+  });
+}
+
 export default function ChatPage() {
   const { profile, loading: authLoading } = useRoleGuard(['client', 'consultant', 'admin', 'quality']);
   const { id: caseId } = useParams();
@@ -127,6 +150,7 @@ export default function ChatPage() {
   const [screenSharing, setScreenSharing] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
+  const [isRemoteVideoFullscreen, setIsRemoteVideoFullscreen] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -135,12 +159,16 @@ export default function ChatPage() {
   const localAudioRef = useRef<HTMLAudioElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoContainerRef = useRef<HTMLDivElement>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const remoteCandidateIdsRef = useRef<Set<string>>(new Set());
   const pendingCandidatesRef = useRef<CallIceCandidate[]>([]);
   const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const mediaMixRef = useRef<{ audioContext: AudioContext; destination: MediaStreamAudioDestinationNode } | null>(null);
+  const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const recordingAnimationRef = useRef<number | null>(null);
+  const recordingVideoStreamRef = useRef<MediaStream | null>(null);
   const callRecorderRef = useRef<MediaRecorder | null>(null);
   const callRecordingChunksRef = useRef<Blob[]>([]);
   const recordingMetaRef = useRef<{ callId: string; consultationId: string; startedAtMs: number } | null>(null);
@@ -160,6 +188,10 @@ export default function ChatPage() {
   const canOpenCall = profile?.role === 'client' || profile?.role === 'consultant';
   const isClientOrConsultant = profile?.role === 'client' || profile?.role === 'consultant';
   const [otherUser, setOtherUser] = useState<UserProfile | null>(null);
+  const canScreenShare =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.mediaDevices !== 'undefined' &&
+    typeof (navigator.mediaDevices as MediaDevices & { getDisplayMedia?: unknown }).getDisplayMedia === 'function';
 
   const isConsultantRecorder = Boolean(profile && consultation?.consultantId && profile.uid === consultation.consultantId);
   const isCallInitiator = Boolean(activeCall && profile && activeCall.initiatedBy === profile.uid);
@@ -274,6 +306,84 @@ export default function ChatPage() {
     }
   };
 
+  const stopCallVisualCapture = () => {
+    if (recordingAnimationRef.current) {
+      cancelAnimationFrame(recordingAnimationRef.current);
+      recordingAnimationRef.current = null;
+    }
+    if (recordingVideoStreamRef.current) {
+      recordingVideoStreamRef.current.getTracks().forEach((track) => track.stop());
+      recordingVideoStreamRef.current = null;
+    }
+    recordingCanvasRef.current = null;
+  };
+
+  const startCallVisualCapture = (): MediaStream | null => {
+    const primaryVideo = remoteVideoRef.current;
+    if (!primaryVideo) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    recordingCanvasRef.current = canvas;
+
+    const drawFrame = () => {
+      const { width, height } = canvas;
+      ctx.fillStyle = '#0b1220';
+      ctx.fillRect(0, 0, width, height);
+
+      if (primaryVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        ctx.drawImage(primaryVideo, 0, 0, width, height);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waiting for video...', width / 2, height / 2);
+      }
+
+      const localVideo = localVideoRef.current;
+      if (localVideo && localVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        const pipWidth = Math.round(width * 0.24);
+        const pipHeight = Math.round(height * 0.24);
+        const margin = Math.round(width * 0.02);
+        const pipX = width - pipWidth - margin;
+        const pipY = height - pipHeight - margin;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(pipX - 6, pipY - 6, pipWidth + 12, pipHeight + 12);
+        ctx.drawImage(localVideo, pipX, pipY, pipWidth, pipHeight);
+        ctx.restore();
+      }
+
+      recordingAnimationRef.current = requestAnimationFrame(drawFrame);
+    };
+
+    drawFrame();
+    const stream = canvas.captureStream(24);
+    recordingVideoStreamRef.current = stream;
+    return stream;
+  };
+
+  const toggleRemoteVideoFullscreen = async () => {
+    const container = remoteVideoContainerRef.current;
+    if (!container) return;
+    try {
+      if (document.fullscreenElement === container) {
+        await document.exitFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        await container.requestFullscreen();
+      } else {
+        await container.requestFullscreen();
+      }
+    } catch {
+      toast.error(language === 'ar' ? 'تعذر فتح وضع ملء الشاشة.' : 'Unable to enter fullscreen mode.');
+    }
+  };
+
   const stopVoiceNoteRecordingTimer = () => {
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -380,6 +490,7 @@ export default function ChatPage() {
     }
 
     stopRemotePlayback();
+    stopCallVisualCapture();
 
     if (!preservePanel) {
       setShowCallPanel(false);
@@ -391,6 +502,14 @@ export default function ChatPage() {
     setCallElapsed(0);
     resetRemoteCandidates();
   }, [stopRemotePlayback]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsRemoteVideoFullscreen(document.fullscreenElement === remoteVideoContainerRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -478,7 +597,7 @@ export default function ChatPage() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredMimeType = chooseRecordingMimeType();
+      const preferredMimeType = chooseVoiceRecordingMimeType();
       const mediaRecorder = preferredMimeType
         ? new MediaRecorder(stream, { mimeType: preferredMimeType })
         : new MediaRecorder(stream);
@@ -624,7 +743,7 @@ export default function ChatPage() {
         profile.uid,
         profile.displayName || profile.email || t(`common.${profile.role}`),
         profile.role,
-        `📅 ${t('chat.meeting_requested')}: I would like to schedule an online meeting to discuss my case.`,
+        `📅 ${t('chat.meeting_requested')}: I would like to schedule an online meeting to discuss my case.\n${t('chat.external_meeting_fallback')}`,
         consultation.clientId,
         consultation.consultantId,
         '',
@@ -639,7 +758,7 @@ export default function ChatPage() {
   };
 
   const handleProvideMeetingLink = async () => {
-    const link = prompt(t('chat.meeting_link_prompt') || 'Please provide the meeting link (Zoom, Google Meet, etc.):');
+    const link = prompt(`${t('chat.meeting_link_prompt') || 'Please provide the meeting link (Zoom, Google Meet, etc.):'}\n\n${t('chat.external_meeting_fallback')}`);
     if (!link || !profile || !caseId || !consultation) return;
     try {
       await chatService.sendMessage(
@@ -647,7 +766,7 @@ export default function ChatPage() {
         profile.uid,
         profile.displayName || profile.email || t(`common.${profile.role}`),
         profile.role,
-        `🔗 ${t('chat.meeting_link')}: ${link}`,
+        `🔗 ${t('chat.meeting_link')}: ${link}\n${t('chat.external_meeting_fallback')}`,
         consultation.clientId,
         consultation.consultantId,
         '',
@@ -691,10 +810,18 @@ export default function ChatPage() {
     remoteSource.connect(destination);
     mediaMixRef.current = { audioContext, destination };
 
-    const mimeType = chooseRecordingMimeType();
+    const visualStream = startCallVisualCapture();
+    const composedStream = visualStream
+      ? new MediaStream([
+          ...visualStream.getVideoTracks(),
+          ...destination.stream.getAudioTracks(),
+        ])
+      : destination.stream;
+
+    const mimeType = chooseCallRecordingMimeType();
     const recorder = mimeType
-      ? new MediaRecorder(destination.stream, { mimeType })
-      : new MediaRecorder(destination.stream);
+      ? new MediaRecorder(composedStream, { mimeType })
+      : new MediaRecorder(composedStream);
 
     callRecorderRef.current = recorder;
     callRecordingChunksRef.current = [];
@@ -713,17 +840,18 @@ export default function ChatPage() {
 
     recorder.onstop = async () => {
       const meta = recordingMetaRef.current;
-      const currentMimeType = recorder.mimeType || 'audio/webm';
+      const currentMimeType = recorder.mimeType || 'video/webm';
       const blob = new Blob(callRecordingChunksRef.current, { type: currentMimeType });
       callRecorderRef.current = null;
       recordingMetaRef.current = null;
       callRecordingChunksRef.current = [];
       recorderStoppingRef.current = false;
+      stopCallVisualCapture();
 
       if (!meta || blob.size === 0) return;
 
       const durationSec = Math.max(1, Math.round((Date.now() - meta.startedAtMs) / 1000));
-      const ext = currentMimeType.includes('ogg') ? 'ogg' : 'webm';
+      const ext = currentMimeType.includes('mp4') ? 'mp4' : 'webm';
       const file = new File([blob], `call_recording_${Date.now()}.${ext}`, { type: currentMimeType });
 
       setCallRecordingProcessing(true);
@@ -949,8 +1077,17 @@ export default function ChatPage() {
     }
   };
 
-  const chooseRecordingMimeType = () => {
+  const chooseVoiceRecordingMimeType = () => {
     const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+    return options.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
+  };
+
+  const chooseCallRecordingMimeType = () => {
+    const options = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
     return options.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
   };
 
@@ -1103,6 +1240,14 @@ export default function ChatPage() {
   const toggleScreenShare = async () => {
     const pc = peerConnectionRef.current;
     if (!pc) return;
+    if (!canScreenShare) {
+      toast.error(
+        language === 'ar'
+          ? 'مشاركة الشاشة غير مدعومة في هذا المتصفح على الهاتف. استخدم متصفحًا على الكمبيوتر.'
+          : 'Screen sharing is not supported in this mobile browser. Use a desktop browser instead.'
+      );
+      return;
+    }
 
     if (screenSharing) {
       // Stop screen share — restore camera if video was enabled, else remove track
@@ -1274,7 +1419,7 @@ export default function ChatPage() {
   const isCallLive = Boolean(activeCall && !TERMINAL_CALL_STATUSES.has(activeCall.status));
 
   return (
-    <div className={`h-screen flex flex-col bg-cloud ${isRTL ? 'rtl' : 'ltr'}`}>
+    <div className={`h-screen h-[100dvh] min-h-0 overflow-hidden flex flex-col bg-cloud ${isRTL ? 'rtl' : 'ltr'}`}>
       <Navbar />
       <Toaster position="top-center" toastOptions={{ style: { fontSize: '13px' } }} />
 
@@ -1491,7 +1636,9 @@ export default function ChatPage() {
                         </a>
                       ) : null}
                       {msg.text ? (
-                        <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.text}</p>
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">
+                          {renderClickableText(msg.text, isMe)}
+                        </p>
                       ) : null}
                     </div>
                     <span className="text-[10px] text-brand-slate px-0.5">
@@ -1506,7 +1653,10 @@ export default function ChatPage() {
 
         {/* ── Input ── */}
         {!isQuality && !chatLockedUntilAssignment && (
-          <div className="shrink-0 bg-white border-t border-soft-blue px-3 pt-2 pb-3">
+          <div
+            className="shrink-0 bg-white border-t border-soft-blue px-3 pt-2 pb-3"
+            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+          >
             {imagePreview && (
               <div className="mb-2 inline-block relative">
                 <div className="h-16 w-16 relative rounded-xl overflow-hidden border border-soft-blue">
@@ -1666,7 +1816,10 @@ export default function ChatPage() {
         )}
 
         {isQuality && (
-          <div className="shrink-0 bg-white border-t border-soft-blue px-4 py-3 text-center">
+          <div
+            className="shrink-0 bg-white border-t border-soft-blue px-4 py-3 text-center"
+            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+          >
             <p className="text-xs text-brand-slate flex items-center justify-center gap-2">
               <Shield className="w-3.5 h-3.5" />
               {t('quality.read_only_msg') || 'Read-only mode for quality assurance'}
@@ -1778,7 +1931,11 @@ export default function ChatPage() {
 
               {/* Remote video */}
               {(videoEnabled || screenSharing) && activeCall.status === 'active' && (
-                <div className="mt-4 w-full relative rounded-xl overflow-hidden bg-black/40" style={{ aspectRatio: '16/9' }}>
+                <div
+                  ref={remoteVideoContainerRef}
+                  className="mt-4 w-full relative rounded-xl overflow-hidden bg-black/40"
+                  style={{ aspectRatio: '16/9' }}
+                >
                   <video
                     ref={remoteVideoRef}
                     autoPlay
@@ -1802,6 +1959,15 @@ export default function ChatPage() {
                       Screen
                     </div>
                   )}
+                  <button
+                    type="button"
+                    onClick={toggleRemoteVideoFullscreen}
+                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/55 text-white hover:bg-black/75 transition-colors flex items-center justify-center"
+                    aria-label={isRemoteVideoFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                    title={isRemoteVideoFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                  >
+                    {isRemoteVideoFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                  </button>
                 </div>
               )}
 
@@ -1907,10 +2073,12 @@ export default function ChatPage() {
                     <button
                       type="button"
                       onClick={toggleScreenShare}
+                      disabled={!canScreenShare}
                       className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all
                         ${screenSharing
                           ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-                          : 'bg-white/12 hover:bg-white/20 text-white'}`}
+                          : 'bg-white/12 hover:bg-white/20 text-white'}
+                        ${!canScreenShare ? 'opacity-40 cursor-not-allowed hover:bg-white/12' : ''}`}
                     >
                       {screenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
                     </button>

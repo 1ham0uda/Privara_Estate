@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { useAuth } from '@/src/context/AuthContext';
@@ -24,22 +23,6 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { Tag, X as XIcon } from 'lucide-react';
 import { analyticsEvents } from '@/src/lib/analytics';
 
-declare global {
-  interface Window {
-    GeideaCheckout?: new (
-      onSuccess: (data: any) => void,
-      onError: (data: any) => void,
-      onCancel: (data: any) => void,
-    ) => {
-      startPayment: (sessionId: string, paymentOptions?: unknown, containerId?: string) => void;
-    };
-  }
-}
-
-const CHECKOUT_SCRIPT_URL =
-  process.env.NEXT_PUBLIC_GEIDEA_CHECKOUT_SCRIPT_URL ||
-  'https://www.merchant.geidea.net/hpp/geideaCheckout.min.js';
-
 export default function PaymentPage() {
   const { t, isRTL, language } = useLanguage();
   const { profile, loading } = useRoleGuard(['client']);
@@ -49,7 +32,6 @@ export default function PaymentPage() {
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [consultationFee, setConsultationFee] = useState(500);
-  const [gatewayReady, setGatewayReady] = useState(false);
   const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
   const [discountCode, setDiscountCode] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; percent: number } | null>(null);
@@ -105,34 +87,6 @@ export default function PaymentPage() {
     [intakeData],
   );
 
-  const launchCheckout = (sessionId: string, caseId: string) => {
-    if (!window.GeideaCheckout) {
-      throw new Error(t('payment.gateway_error'));
-    }
-
-    const onSuccess = () => {
-      sessionStorage.removeItem('pending_intake');
-      sessionStorage.removeItem('pending_case_id');
-      setPendingCaseId(null);
-      setSuccess(true);
-      toast.success(t('payment.success_title'));
-      setTimeout(() => {
-        router.push(`/client/cases/${caseId}`);
-      }, 1200);
-    };
-
-    const onError = () => {
-      toast.error(t('payment.error_failed'));
-    };
-
-    const onCancel = () => {
-      toast.error(t('payment.cancelled'));
-    };
-
-    const payment = new window.GeideaCheckout(onSuccess, onError, onCancel);
-    payment.startPayment(sessionId);
-  };
-
   const effectiveFee = appliedDiscount
     ? Math.round(consultationFee * (1 - appliedDiscount.percent / 100))
     : consultationFee;
@@ -164,10 +118,6 @@ export default function PaymentPage() {
 
   const handlePayment = async () => {
     if (!intakeData || !user) return;
-    if (!gatewayReady) {
-      toast.error(t('payment.gateway_loading'));
-      return;
-    }
 
     analyticsEvents.paymentInitiated(effectiveFee, 'EGP');
     setProcessing(true);
@@ -203,7 +153,15 @@ export default function PaymentPage() {
         throw new Error(data?.error || t('payment.error_failed'));
       }
 
-      launchCheckout(data.sessionId, data.caseId);
+      sessionStorage.removeItem('pending_intake');
+      sessionStorage.removeItem('pending_case_id');
+      setPendingCaseId(null);
+      setSuccess(true);
+      analyticsEvents.paymentCompleted(effectiveFee, 'EGP');
+      toast.success(t('payment.success_title'));
+      setTimeout(() => {
+        router.push(`/client/cases/${data.caseId}`);
+      }, 900);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('payment.error_failed'));
     } finally {
@@ -215,15 +173,6 @@ export default function PaymentPage() {
 
   return (
     <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
-      <Script
-        src={CHECKOUT_SCRIPT_URL}
-        strategy="afterInteractive"
-        onLoad={() => setGatewayReady(true)}
-        onError={() => {
-          setGatewayReady(false);
-          toast.error(t('payment.gateway_error'));
-        }}
-      />
       <Navbar />
       <Toaster />
 
@@ -393,14 +342,12 @@ export default function PaymentPage() {
                       onClick={handlePayment}
                       className="w-full h-14 text-lg rounded-2xl"
                       loading={processing}
-                      disabled={!gatewayReady || processing}
+                      disabled={processing}
                     >
-                      {gatewayReady
-                        ? t('payment.confirm_and_pay').replace(
-                            '{amount}',
-                            consultationFee.toLocaleString(),
-                          )
-                        : t('payment.gateway_loading')}
+                      {t('payment.confirm_and_pay').replace(
+                        '{amount}',
+                        consultationFee.toLocaleString(),
+                      )}
                     </Button>
                   </div>
                 </div>

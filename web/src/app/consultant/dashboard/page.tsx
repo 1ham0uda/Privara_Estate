@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
-import { consultationService, userService, consultantService, availabilityService } from '@/src/lib/db';
+import { consultationService, consultantService, availabilityService, financeService } from '@/src/lib/db';
 import { ConsultationCase, UserProfile, ConsultantProfile, ConsultantAvailability } from '@/src/types';
 import { Card, Badge, Button, Skeleton, SkeletonCard } from '@/src/components/UI';
 import {
@@ -36,6 +36,7 @@ export default function ConsultantDashboard() {
   const [availability, setAvailability] = useState<ConsultantAvailability>('available');
   const [availabilityNote, setAvailabilityNote] = useState('');
   const [savingAvailability, setSavingAvailability] = useState(false);
+  const [payouts, setPayouts] = useState<any[]>([]);
 
   useEffect(() => {
     if (profile) {
@@ -48,6 +49,7 @@ export default function ConsultantDashboard() {
         if (p?.availability) setAvailability(p.availability);
         if (p?.availabilityNote) setAvailabilityNote(p.availabilityNote);
       });
+      financeService.listConsultantPayouts(profile.uid).then(setPayouts);
 
       return () => unsubscribe();
     }
@@ -94,6 +96,8 @@ export default function ConsultantDashboard() {
   const activeCases = cases.filter(c => c.status !== 'completed');
   const completedCases = cases.filter(c => c.status === 'completed');
   const ratedCases = cases.filter(c => c.rating);
+  const totalPaid = payouts.filter((p) => p.status === 'paid').reduce((acc, p) => acc + (p.netAmount || 0), 0);
+  const totalPending = payouts.filter((p) => p.status !== 'paid').reduce((acc, p) => acc + (p.netAmount || 0), 0);
   const avgRating = ratedCases.length > 0 
     ? (ratedCases.reduce((acc, c) => acc + (c.rating || 0), 0) / ratedCases.length).toFixed(1)
     : 'N/A';
@@ -140,6 +144,17 @@ export default function ConsultantDashboard() {
               <div>
                 <p className="text-sm text-brand-slate">{t('consultant.avg_rating')}</p>
                 <p className="text-2xl font-bold">{avgRating}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="bg-white border-none shadow-sm p-6" hover={false}>
+            <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+                <TrendingUp className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-brand-slate">المستحقات قيد الصرف</p>
+                <p className="text-2xl font-bold">{totalPending.toFixed(2)}</p>
               </div>
             </div>
           </Card>
@@ -255,6 +270,36 @@ export default function ConsultantDashboard() {
 
           <div className="space-y-8">
             {/* Availability Toggle */}
+            <Card className="bg-white border-none shadow-sm p-6" hover={false}>
+              <h3 className="text-base font-bold mb-4">ملخص العوائد</h3>
+              <div className="space-y-2 text-sm">
+                <p>إجمالي تم صرفه: <span className="font-bold">{totalPaid.toFixed(2)}</span></p>
+                <p>إجمالي قيد الصرف: <span className="font-bold">{totalPending.toFixed(2)}</span></p>
+              </div>
+            </Card>
+
+            <Card className="bg-white border-none shadow-sm p-6" hover={false}>
+              <h3 className="text-base font-bold mb-4">تفاصيل الدورات المالية (20 → 19)</h3>
+              <div className="space-y-3 max-h-72 overflow-y-auto">
+                {payouts.length === 0 ? (
+                  <p className="text-sm text-brand-slate">لا توجد دورات حتى الآن.</p>
+                ) : payouts.map((payout) => (
+                  <div key={payout.id} className="p-3 border border-soft-blue rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold">{payout.periodKey}</p>
+                      <Badge variant={payout.status === 'paid' ? 'success' : 'warning'}>{payout.status === 'paid' ? 'تم الدفع' : 'معلق'}</Badge>
+                    </div>
+                    <p className="text-xs text-brand-slate mb-2">إجمالي: {payout.grossAmount} | خصومات: {payout.totalDeductions} | صافي: {payout.netAmount}</p>
+                    {(payout.settlements || []).map((s: any) => (
+                      <div key={s.consultationId} className="text-[11px] bg-cloud rounded p-2 mb-1">
+                        #{s.caseNumber} - {s.netAmount} (خصم {s.deductionAmount})
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+
             <Card className="bg-white border-none shadow-sm p-6" hover={false}>
               <h3 className="text-base font-bold mb-4 flex items-center gap-2">
                 {availability === 'available' ? <Wifi className="w-4 h-4 text-emerald-500" /> : <WifiOff className="w-4 h-4 text-brand-slate" />}

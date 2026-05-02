@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
-import { consultationService, consultantService, qualityService } from '@/src/lib/db';
+import { consultationService, consultantService, qualityService, financeService } from '@/src/lib/db';
 import { ConsultationCase, ConsultantProfile, UserProfile, QualityAuditReport } from '@/src/types';
 import { Card, Badge, Button, Skeleton, SkeletonCard, EmptyState } from '@/src/components/UI';
 import { announce } from '@/src/hooks/useAnnounce';
@@ -35,12 +35,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useLanguage } from '@/src/context/LanguageContext';
 import { settingsService } from '@/src/lib/db';
 import AdminSupportWorkspace from '@/src/components/support/AdminSupportWorkspace';
-import AdminAnalyticsTab from '@/src/components/admin/AdminAnalyticsTab';
 import AdminSidebar from '@/src/components/admin/AdminSidebar';
 import type { AdminTab } from '@/src/components/admin/AdminSidebar';
 import { useFocusTrap } from '@/src/hooks/useFocusTrap';
 import { auth, app } from '@/src/lib/firebase';
-import { multiFactor } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function AdminDashboard() {
@@ -72,8 +70,12 @@ export default function AdminDashboard() {
   const [casesLimit, setCasesLimit] = useState(50);
   const [casesHasMore, setCasesHasMore] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
-
-  const mfaEnrolled = auth.currentUser ? (multiFactor(auth.currentUser).enrolledFactors?.length ?? 0) > 0 : false;
+  const [consultantRevenueSharePercent, setConsultantRevenueSharePercent] = useState(80);
+  const [selectedFinanceRange, setSelectedFinanceRange] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [financeMetric, setFinanceMetric] = useState<'gross' | 'net'>('net');
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [isBuildingPayouts, setIsBuildingPayouts] = useState(false);
+  const [payoutReferenceById, setPayoutReferenceById] = useState<Record<string, string>>({});
 
   const getAuthToken = async () => {
     const token = await auth.currentUser?.getIdToken();
@@ -122,6 +124,7 @@ export default function AdminDashboard() {
           setProFee(settings.proFee ?? settings.standardFee ?? settings.consultationFee ?? 750);
           setAllowRegistrations(settings.allowRegistrations ?? true);
           setMaintenanceMode(settings.maintenanceMode ?? false);
+          setConsultantRevenueSharePercent(settings.consultantRevenueSharePercent ?? 80);
         }
       };
 
@@ -266,7 +269,7 @@ export default function AdminDashboard() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      await adminFetch('/api/admin/save-settings', { consultationFee: standardFee, standardFee, proFee, allowRegistrations, maintenanceMode });
+      await adminFetch('/api/admin/save-settings', { consultationFee: standardFee, standardFee, proFee, consultantRevenueSharePercent, allowRegistrations, maintenanceMode });
       toast.success(t('admin.dashboard.settings_success'));
       setShowSettingsModal(false);
     } catch (error) {
@@ -295,6 +298,64 @@ export default function AdminDashboard() {
     }
   };
 
+  const refreshPayouts = async () => {
+    const currentPeriod = financeService.getPeriodBoundaries(new Date());
+    const data = await financeService.listPayouts(currentPeriod.periodKey);
+    setPayouts(data);
+  };
+
+  useEffect(() => {
+    if (profile && activeTab === 'analytics') {
+      refreshPayouts();
+    }
+  }, [profile, activeTab]);
+
+  const handleBuildPayouts = async () => {
+    setIsBuildingPayouts(true);
+    try {
+      const period = financeService.getPeriodBoundaries(new Date());
+      await financeService.buildConsultantPayoutsForPeriod(period.start, period.end);
+      await refreshPayouts();
+      toast.success('تم تجهيز دورة المستحقات الحالية');
+    } catch (error) {
+      toast.error('فشل تجهيز دورة المستحقات');
+    } finally {
+      setIsBuildingPayouts(false);
+    }
+  };
+
+  const handleMarkPaid = async (payoutId: string) => {
+    if (!profile) return;
+    const reference = (payoutReferenceById[payoutId] || '').trim();
+    if (!reference) {
+      toast.error('أدخل مرجع التحويل البنكي أولاً');
+      return;
+    }
+    try {
+      await financeService.markPayoutAsPaid(payoutId, reference, profile.uid);
+      await refreshPayouts();
+      toast.success('تم اعتماد الدفع كمكتمل');
+    } catch {
+      toast.error('تعذر تحديث حالة الدفع');
+    }
+  };
+
+  const handleConsultantPriceSave = async (consultantId: string, rawValue: string) => {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error('سعر غير صالح');
+      return;
+    }
+    try {
+      await financeService.updateConsultantPricing(consultantId, value);
+      const updated = await consultantService.getAllConsultants();
+      setConsultants(updated);
+      toast.success('تم تحديث سعر المستشار');
+    } catch {
+      toast.error('تعذر تحديث السعر');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-cloud flex" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -313,37 +374,6 @@ export default function AdminDashboard() {
             <SkeletonCard key="c" lines={5} />
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (!mfaEnrolled) {
-    return (
-      <div className="min-h-screen bg-cloud" dir={isRTL ? 'rtl' : 'ltr'}>
-        <Navbar />
-        <main className="max-w-md mx-auto px-4 pt-24 pb-12">
-          <Card className="p-8 text-center" hover={false}>
-            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Shield className="w-8 h-8 text-amber-600" aria-hidden="true" />
-            </div>
-            <h1 className="font-serif text-2xl font-bold text-ink mb-3">
-              {t('admin.mfa.gate_title')}
-            </h1>
-            <p className="text-brand-slate mb-8 text-sm leading-relaxed">
-              {t('admin.mfa.gate_desc')}
-            </p>
-            <div className="flex flex-col gap-3">
-              <Link href="/profile">
-                <Button variant="primary" className="w-full">
-                  {t('admin.mfa.gate_enroll')}
-                </Button>
-              </Link>
-              <Button variant="outline" className="w-full" onClick={() => auth.signOut()}>
-                {t('admin.mfa.gate_signout')}
-              </Button>
-            </div>
-          </Card>
-        </main>
       </div>
     );
   }
@@ -909,7 +939,112 @@ export default function AdminDashboard() {
         ) : activeTab === 'support' ? (
           <AdminSupportWorkspace />
         ) : activeTab === 'analytics' ? (
-          <AdminAnalyticsTab cases={cases} consultants={consultants} consultationFee={consultationFee} />
+          <div className="space-y-6">
+            <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
+              <div className="flex flex-col lg:flex-row gap-4 lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-ink">لوحة العوائد والدفع للمستشارين</h2>
+                  <p className="text-sm text-brand-slate">الدورة المالية تعتمد على الفترة من يوم 20 حتى يوم 19 من الشهر التالي.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleBuildPayouts} loading={isBuildingPayouts}>
+                    تجهيز مستحقات الدورة الحالية
+                  </Button>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
+              <h3 className="font-bold mb-4">إعدادات التسعير والنسبة</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="text-xs text-brand-slate block mb-1">نسبة المستشار الثابتة (%)</label>
+                  <input type="number" min={1} max={100} value={consultantRevenueSharePercent} onChange={(e) => setConsultantRevenueSharePercent(Number(e.target.value))} className="w-full h-10 px-3 border border-soft-blue rounded-xl" />
+                </div>
+                <div>
+                  <label className="text-xs text-brand-slate block mb-1">نطاق التحليل</label>
+                  <select value={selectedFinanceRange} onChange={(e) => setSelectedFinanceRange(e.target.value as any)} className="w-full h-10 px-3 border border-soft-blue rounded-xl">
+                    <option value="daily">يومي</option>
+                    <option value="weekly">أسبوعي</option>
+                    <option value="monthly">شهري</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-brand-slate block mb-1">نوع العوائد</label>
+                  <select value={financeMetric} onChange={(e) => setFinanceMetric(e.target.value as any)} className="w-full h-10 px-3 border border-soft-blue rounded-xl">
+                    <option value="gross">إجمالي</option>
+                    <option value="net">صافي بعد الخصومات</option>
+                  </select>
+                </div>
+              </div>
+              <Button onClick={handleSaveSettings}>حفظ الإعدادات</Button>
+            </Card>
+
+            <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
+              <h3 className="font-bold mb-4">تسعير كل مستشار</h3>
+              <div className="space-y-3">
+                {consultants.map((c) => (
+                  <div key={c.uid} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center p-3 border border-soft-blue rounded-xl">
+                    <div className="font-semibold">{c.name}</div>
+                    <div className="text-sm text-brand-slate">افتراضي: {standardFee} ج.م</div>
+                    <input
+                      type="number"
+                      defaultValue={(c as any).customConsultationFee ?? standardFee}
+                      id={`consultant-fee-${c.uid}`}
+                      className="h-10 px-3 border border-soft-blue rounded-xl"
+                    />
+                    <Button variant="outline" onClick={() => {
+                      const input = document.getElementById(`consultant-fee-${c.uid}`) as HTMLInputElement | null;
+                      handleConsultantPriceSave(c.uid, input?.value || '');
+                    }}>حفظ السعر</Button>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
+              <h3 className="font-bold mb-4">ملخص العوائد</h3>
+              <p className="text-lg font-bold text-blue-700">
+                {financeMetric === 'gross' ? 'إجمالي العوائد' : 'صافي العوائد'} ({selectedFinanceRange}): {financeService.computeRangeTotals(payouts, selectedFinanceRange, financeMetric)} ج.م
+              </p>
+            </Card>
+
+            <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
+              <h3 className="font-bold mb-4">دفعات المستشارين - الدورة الحالية</h3>
+              <div className="space-y-4">
+                {payouts.map((payout) => (
+                  <div key={payout.id} className="p-4 border border-soft-blue rounded-xl space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{payout.consultantName}</p>
+                        <p className="text-xs text-brand-slate">عدد الاستشارات: {payout.consultationsCount} | الإجمالي: {payout.grossAmount} | الخصومات: {payout.totalDeductions} | الصافي: {payout.netAmount}</p>
+                      </div>
+                      <Badge variant={payout.status === 'paid' ? 'success' : 'warning'}>{payout.status === 'paid' ? 'تم الدفع' : 'قيد المراجعة'}</Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {(payout.settlements || []).map((s: any) => (
+                        <div key={s.consultationId} className="text-xs bg-cloud p-2 rounded-lg">
+                          #{s.caseNumber} - {s.clientName} - gross: {s.grossAmount} - deduction: {s.deductionAmount} - net: {s.netAmount}
+                        </div>
+                      ))}
+                    </div>
+                    {payout.status !== 'paid' && (
+                      <div className="flex flex-col md:flex-row gap-2">
+                        <input
+                          type="text"
+                          placeholder="مرجع التحويل البنكي"
+                          value={payoutReferenceById[payout.id] || ''}
+                          onChange={(e) => setPayoutReferenceById((prev) => ({ ...prev, [payout.id]: e.target.value }))}
+                          className="h-10 px-3 border border-soft-blue rounded-xl flex-1"
+                        />
+                        <Button onClick={() => handleMarkPaid(payout.id)}>تأكيد السداد الخارجي</Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
         ) : null}
       </main>
       

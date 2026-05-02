@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
     const specialties = typeof body.specialties === 'string' ? body.specialties : '';
     const rawExperienceYears = body.experienceYears;
     const experienceYears = Number(rawExperienceYears ?? 0);
+    const customConsultationFee = body.customConsultationFee == null ? null : Number(body.customConsultationFee);
 
     if (!email || !displayName || !role) {
       return errorResponse('Missing required fields', 'missing-required-fields', 400);
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
           completedConsultations: 0,
           professionalSummary: bio,
           status: 'active',
+          ...(Number.isFinite(customConsultationFee) && customConsultationFee! > 0 ? { customConsultationFee } : {}),
         });
       }
 

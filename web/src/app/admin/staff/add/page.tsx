@@ -53,6 +53,7 @@ export default function AddStaffPage() {
     bio: '',
     phoneNumber: '',
     experienceYears: '',
+    customConsultationFee: '',
   });
 
   const roleOptions = useMemo(
@@ -108,6 +109,9 @@ export default function AddStaffPage() {
         bio: normalizedRole === 'consultant' ? formData.bio.trim() : '',
         phoneNumber: formData.phoneNumber.trim(),
         experienceYears: parsedExperience,
+        customConsultationFee: normalizedRole === 'consultant' && formData.customConsultationFee
+          ? Number(formData.customConsultationFee)
+          : null,
       };
 
       const response = await fetch('/api/admin/create-staff', {
@@ -225,6 +229,16 @@ export default function AddStaffPage() {
                     className="w-full px-4 py-3 bg-cloud border-2 border-soft-blue rounded-xl focus:border-blue-600 focus:outline-none transition-all text-sm"
                     rows={4}
                     placeholder={t('admin.staff.add.bio_placeholder')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-ink mb-1">سعر استشارة المستشار (اختياري)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.customConsultationFee}
+                    onChange={(e: any) => setFormData({ ...formData, customConsultationFee: e.target.value })}
+                    placeholder="مثال: 800"
                   />
                 </div>
               </>

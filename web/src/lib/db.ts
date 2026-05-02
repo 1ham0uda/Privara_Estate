@@ -16,6 +16,7 @@ import {
   limit,
   startAfter,
   QueryDocumentSnapshot,
+  writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
@@ -25,6 +26,7 @@ import {
   SystemSettings, ScheduledMeeting, RatingDetails, StructuredReport,
   ReportSection, ComparableProperty, NotificationPreferences,
   ConsultantAvailability, PaginatedResult, AuditCriterion,
+  ConsultantSettlement, ConsultantPayoutSummary, FinancePeriodKey, FinanceRange,
 } from '../types';
 
 enum OperationType {
@@ -1006,6 +1008,180 @@ export const settingsService = {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   }
+};
+
+function toDateValue(value: any): Date {
+  if (!value) return new Date(0);
+  if (typeof value?.toDate === 'function') return value.toDate();
+  return new Date(value);
+}
+
+function toPeriodKey(date: Date): FinancePeriodKey {
+  const month = date.getUTCMonth() + 1;
+  return `${date.getUTCFullYear()}-${month.toString().padStart(2, '0')}` as FinancePeriodKey;
+}
+
+export const financeService = {
+  getPeriodBoundaries(anchorDate = new Date()): { periodKey: FinancePeriodKey; start: Date; end: Date } {
+    const year = anchorDate.getUTCFullYear();
+    const month = anchorDate.getUTCMonth();
+    const day = anchorDate.getUTCDate();
+    const start = day >= 20
+      ? new Date(Date.UTC(year, month, 20, 0, 0, 0, 0))
+      : new Date(Date.UTC(year, month - 1, 20, 0, 0, 0, 0));
+    const end = day >= 20
+      ? new Date(Date.UTC(year, month + 1, 19, 23, 59, 59, 999))
+      : new Date(Date.UTC(year, month, 19, 23, 59, 59, 999));
+    return { periodKey: toPeriodKey(start), start, end };
+  },
+
+  async updateConsultantPricing(uid: string, customConsultationFee: number): Promise<void> {
+    const path = `consultantProfiles/${uid}`;
+    try {
+      await updateDoc(doc(db, 'consultantProfiles', uid), { customConsultationFee });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+
+  async buildConsultantPayoutsForPeriod(periodStart: Date, periodEnd: Date): Promise<void> {
+    const path = 'consultantPayouts';
+    try {
+      const settings = await settingsService.getSettings();
+      const share = Number(settings.consultantRevenueSharePercent ?? 80);
+      const periodKey = toPeriodKey(periodStart);
+
+      const [consultationsSnap, consultantsSnap] = await Promise.all([
+        getDocs(query(
+          collection(db, 'consultations'),
+          where('status', '==', 'completed'),
+          where('updatedAt', '>=', Timestamp.fromDate(periodStart)),
+          where('updatedAt', '<=', Timestamp.fromDate(periodEnd)),
+        )),
+        getDocs(collection(db, 'consultantProfiles')),
+      ]);
+
+      const consultantMap = new Map(consultantsSnap.docs.map((d) => [d.id, d.data()]));
+      const grouped = new Map<string, ConsultantSettlement[]>();
+
+      consultationsSnap.docs.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        const consultantId = data.consultantId;
+        if (!consultantId) return;
+        const consultant = consultantMap.get(consultantId) as any;
+        if (!consultant) return;
+        const fee = Number(consultant.customConsultationFee ?? settings.standardFee ?? settings.consultationFee ?? 500);
+        const gross = Number((fee * (share / 100)).toFixed(2));
+        const qualityScore = Number(data.rating ?? 0);
+        const deductionPercent = qualityScore > 0 && qualityScore < 3 ? 20 : qualityScore >= 3 && qualityScore < 4 ? 10 : 0;
+        const deductionAmount = Number((gross * (deductionPercent / 100)).toFixed(2));
+        const net = Number((gross - deductionAmount).toFixed(2));
+        const settlement: ConsultantSettlement = {
+          consultationId: docSnap.id,
+          caseNumber: docSnap.id.slice(-6).toUpperCase(),
+          clientName: data.clientName ?? 'Client',
+          completedAt: data.completedAt ?? data.updatedAt ?? Timestamp.now(),
+          consultationFee: fee,
+          consultantSharePercent: share,
+          grossAmount: gross,
+          qualityScore: qualityScore || undefined,
+          deductionPercent,
+          deductionAmount,
+          netAmount: net,
+          notes: deductionPercent > 0 ? 'Quality deduction applied' : '',
+        };
+        const current = grouped.get(consultantId) ?? [];
+        current.push(settlement);
+        grouped.set(consultantId, current);
+      });
+
+      const batch = writeBatch(db);
+      grouped.forEach((items, consultantId) => {
+        const consultantData = consultantMap.get(consultantId) as any;
+        const grossAmount = Number(items.reduce((acc, item) => acc + item.grossAmount, 0).toFixed(2));
+        const totalDeductions = Number(items.reduce((acc, item) => acc + item.deductionAmount, 0).toFixed(2));
+        const netAmount = Number((grossAmount - totalDeductions).toFixed(2));
+        const payoutRef = doc(db, 'consultantPayouts', `${periodKey}_${consultantId}`);
+        const summary: ConsultantPayoutSummary = {
+          consultantId,
+          consultantName: consultantData?.name ?? 'Consultant',
+          periodKey,
+          periodStart: Timestamp.fromDate(periodStart),
+          periodEnd: Timestamp.fromDate(periodEnd),
+          consultationsCount: items.length,
+          grossAmount,
+          totalDeductions,
+          netAmount,
+          status: 'draft',
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        };
+        batch.set(payoutRef, { ...summary, settlements: items }, { merge: true });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+
+  async listPayouts(periodKey?: FinancePeriodKey): Promise<(ConsultantPayoutSummary & { id: string; settlements: ConsultantSettlement[] })[]> {
+    const path = 'consultantPayouts';
+    try {
+      const q = periodKey
+        ? query(collection(db, 'consultantPayouts'), where('periodKey', '==', periodKey))
+        : query(collection(db, 'consultantPayouts'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as any));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  },
+
+  async listConsultantPayouts(consultantId: string): Promise<(ConsultantPayoutSummary & { id: string; settlements: ConsultantSettlement[] })[]> {
+    const path = 'consultantPayouts';
+    try {
+      const q = query(collection(db, 'consultantPayouts'), where('consultantId', '==', consultantId));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as any))
+        .sort((a, b) => toDateValue(b.periodStart).getTime() - toDateValue(a.periodStart).getTime());
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  },
+
+  async markPayoutAsPaid(payoutId: string, paidReference: string, paidByAdminId: string): Promise<void> {
+    const path = `consultantPayouts/${payoutId}`;
+    try {
+      await updateDoc(doc(db, 'consultantPayouts', payoutId), {
+        status: 'paid',
+        paidReference,
+        paidByAdminId,
+        paidAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+
+  computeRangeTotals(
+    payouts: Array<ConsultantPayoutSummary & { settlements?: ConsultantSettlement[] }>,
+    range: FinanceRange,
+    metric: 'gross' | 'net'
+  ): number {
+    const now = new Date();
+    const threshold = new Date(now);
+    if (range === 'daily') threshold.setUTCDate(now.getUTCDate() - 1);
+    if (range === 'weekly') threshold.setUTCDate(now.getUTCDate() - 7);
+    if (range === 'monthly') threshold.setUTCMonth(now.getUTCMonth() - 1);
+    return Number(
+      payouts
+        .filter((p) => toDateValue(p.periodEnd) >= threshold)
+        .reduce((acc, p) => acc + (metric === 'gross' ? p.grossAmount : p.netAmount), 0)
+        .toFixed(2)
+    );
+  },
 };
 
 // ─── Consultant availability ───────────────────────────────────────────────────

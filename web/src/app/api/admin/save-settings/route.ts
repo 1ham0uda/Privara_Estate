@@ -26,15 +26,21 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const consultationFee = Number(body.consultationFee);
+    const standardFee = Number(body.standardFee ?? consultationFee);
+    const proFee = Number(body.proFee ?? standardFee);
+    const consultantRevenueSharePercent = Number(body.consultantRevenueSharePercent ?? 80);
     const allowRegistrations = Boolean(body.allowRegistrations);
     const maintenanceMode = Boolean(body.maintenanceMode);
 
-    if (!Number.isFinite(consultationFee) || consultationFee < 0) {
+    if (!Number.isFinite(consultationFee) || consultationFee < 0 || !Number.isFinite(standardFee) || standardFee < 0 || !Number.isFinite(proFee) || proFee < 0) {
       return errorResponse('Invalid consultation fee', 'invalid-fee', 400);
+    }
+    if (!Number.isFinite(consultantRevenueSharePercent) || consultantRevenueSharePercent <= 0 || consultantRevenueSharePercent > 100) {
+      return errorResponse('Invalid consultant revenue share', 'invalid-share', 400);
     }
 
     await adminDb.collection('settings').doc('system').set(
-      { consultationFee, allowRegistrations, maintenanceMode },
+      { consultationFee, standardFee, proFee, consultantRevenueSharePercent, allowRegistrations, maintenanceMode },
       { merge: true }
     );
 
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
       action: 'settings_updated',
       actorUid: decoded.uid,
       targetId: 'system',
-      metadata: { consultationFee, allowRegistrations, maintenanceMode },
+      metadata: { consultationFee, standardFee, proFee, consultantRevenueSharePercent, allowRegistrations, maintenanceMode },
       ip: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip'),
     });
 

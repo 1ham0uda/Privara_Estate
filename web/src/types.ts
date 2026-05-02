@@ -379,8 +379,45 @@ export interface SystemSettings {
   consultationFee: number;
   standardFee?: number;
   proFee?: number;
+  consultantRevenueSharePercent?: number;
   allowRegistrations: boolean;
   maintenanceMode: boolean;
+}
+
+export type FinancePeriodKey = `${number}-${number}`;
+export type FinanceRange = 'daily' | 'weekly' | 'monthly';
+
+export interface ConsultantSettlement {
+  consultationId: string;
+  caseNumber: string;
+  clientName: string;
+  completedAt: any;
+  consultationFee: number;
+  consultantSharePercent: number;
+  grossAmount: number;
+  qualityScore?: number;
+  deductionPercent: number;
+  deductionAmount: number;
+  netAmount: number;
+  notes?: string;
+}
+
+export interface ConsultantPayoutSummary {
+  consultantId: string;
+  consultantName: string;
+  periodKey: FinancePeriodKey;
+  periodStart: any;
+  periodEnd: any;
+  consultationsCount: number;
+  grossAmount: number;
+  totalDeductions: number;
+  netAmount: number;
+  status: 'draft' | 'approved' | 'paid';
+  paidAt?: any;
+  paidReference?: string;
+  paidByAdminId?: string;
+  createdAt: any;
+  updatedAt: any;
 }
 
 // ─── Multi-tenant organization foundation ────────────────────────────────────

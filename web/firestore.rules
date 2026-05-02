@@ -145,7 +145,7 @@ service cloud.firestore {
 
     function isValidConsultantProfile(data) {
       return hasRequiredFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary']) &&
-        hasOnlyAllowedFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary', 'avatarUrl', 'status']) &&
+        hasOnlyAllowedFields(['uid', 'name', 'bio', 'experienceYears', 'specialties', 'completedConsultations', 'rating', 'professionalSummary', 'avatarUrl', 'status', 'areas', 'availability', 'availabilityNote', 'feeTier', 'customConsultationFee']) &&
         data.uid is string &&
         data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
         data.bio is string && data.bio.size() < 2000 &&
@@ -154,12 +154,17 @@ service cloud.firestore {
         data.completedConsultations is number && data.completedConsultations >= 0 &&
         data.rating is number && data.rating >= 0 && data.rating <= 5 &&
         data.professionalSummary is string && data.professionalSummary.size() < 5000 &&
-        (!('status' in data) || data.status in ['active', 'deactivated']);
+        (!('status' in data) || data.status in ['active', 'deactivated']) &&
+        (!('areas' in data) || data.areas is list) &&
+        (!('availability' in data) || data.availability in ['available', 'busy', 'away']) &&
+        (!('availabilityNote' in data) || data.availabilityNote is string) &&
+        (!('feeTier' in data) || data.feeTier in ['standard', 'pro']) &&
+        (!('customConsultationFee' in data) || (data.customConsultationFee is number && data.customConsultationFee >= 0));
     }
 
     function isValidConsultation(data) {
       return hasRequiredFields(['clientId', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt']) &&
-        hasOnlyAllowedFields(['clientId', 'clientName', 'clientAvatarUrl', 'consultantId', 'consultantName', 'qualitySpecialistId', 'qualitySpecialistName', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt', 'completedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'reassignmentRequestStatus', 'tags', 'rating', 'feedback', 'internalNotes']) &&
+        hasOnlyAllowedFields(['clientId', 'clientName', 'clientAvatarUrl', 'consultantId', 'consultantName', 'qualitySpecialistId', 'qualitySpecialistName', 'paymentStatus', 'status', 'stage', 'intake', 'createdAt', 'updatedAt', 'completedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'reassignmentRequestStatus', 'tags', 'rating', 'feedback', 'internalNotes', 'ratingDetails', 'structuredReport', 'consultantReassignmentRequest', 'payment']) &&
         data.clientId is string &&
         (!('clientName' in data) || data.clientName is string) &&
         (!('clientAvatarUrl' in data) || data.clientAvatarUrl == null || data.clientAvatarUrl == "" || isValidUrl(data.clientAvatarUrl)) &&
@@ -172,6 +177,10 @@ service cloud.firestore {
         (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
         (!('feedback' in data) || data.feedback is string) &&
         (!('internalNotes' in data) || data.internalNotes is string && data.internalNotes.size() < 5000) &&
+        (!('ratingDetails' in data) || data.ratingDetails == null || data.ratingDetails is map) &&
+        (!('structuredReport' in data) || data.structuredReport == null || data.structuredReport is map) &&
+        (!('consultantReassignmentRequest' in data) || data.consultantReassignmentRequest == null || data.consultantReassignmentRequest is map) &&
+        (!('payment' in data) || data.payment == null || data.payment is map) &&
         data.intake is map &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -179,7 +188,7 @@ service cloud.firestore {
 
     function isValidMessage(data) {
       return hasRequiredFields(['caseId', 'senderId', 'senderName', 'senderRole', 'text', 'clientId', 'createdAt']) &&
-        hasOnlyAllowedFields(['caseId', 'senderId', 'senderName', 'senderRole', 'text', 'clientId', 'consultantId', 'imageUrl', 'audioUrl', 'type', 'createdAt']) &&
+        hasOnlyAllowedFields(['caseId', 'senderId', 'senderName', 'senderRole', 'text', 'clientId', 'consultantId', 'imageUrl', 'audioUrl', 'fileUrl', 'fileName', 'fileType', 'fileSize', 'type', 'createdAt']) &&
         data.caseId is string &&
         data.senderId == request.auth.uid &&
         data.senderName is string && data.senderName.size() > 0 && data.senderName.size() < 100 &&
@@ -189,12 +198,17 @@ service cloud.firestore {
         (!('consultantId' in data) || data.consultantId == null || data.consultantId is string) &&
         (!('imageUrl' in data) || data.imageUrl == null || data.imageUrl == "" || isValidUrl(data.imageUrl)) &&
         (!('audioUrl' in data) || data.audioUrl == null || data.audioUrl == "" || isValidUrl(data.audioUrl)) &&
-        (!('type' in data) || data.type in ['text', 'image', 'audio', 'meeting_request', 'meeting_link', 'call_log']) &&
+        (!('fileUrl' in data) || data.fileUrl == null || data.fileUrl == "" || isValidUrl(data.fileUrl)) &&
+        (!('fileName' in data) || data.fileName == null || data.fileName is string) &&
+        (!('fileType' in data) || data.fileType == null || data.fileType is string) &&
+        (!('fileSize' in data) || data.fileSize == null || (data.fileSize is number && data.fileSize >= 0 && data.fileSize < 20 * 1024 * 1024)) &&
+        (!('type' in data) || data.type in ['text', 'image', 'audio', 'file', 'meeting_request', 'meeting_link', 'call_log']) &&
         data.createdAt is timestamp &&
-        // At least one of text, image, or audio must be present — no genuinely empty messages
+        // At least one of text, image, audio, or file must be present.
         (data.text.size() > 0 ||
           ('imageUrl' in data && data.imageUrl != null && data.imageUrl != "") ||
-          ('audioUrl' in data && data.audioUrl != null && data.audioUrl != ""));
+          ('audioUrl' in data && data.audioUrl != null && data.audioUrl != "") ||
+          ('fileUrl' in data && data.fileUrl != null && data.fileUrl != ""));
     }
 
     function isValidAuditReport(data) {
@@ -293,6 +307,26 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
+    function isValidMeeting(data) {
+      return hasRequiredFields(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'title', 'scheduledAt', 'durationMinutes', 'status', 'createdAt', 'updatedAt']) &&
+        hasOnlyAllowedFields(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'title', 'scheduledAt', 'durationMinutes', 'status', 'meetingLink', 'notes', 'createdAt', 'updatedAt', 'reminderSentAt']) &&
+        data.caseId is string &&
+        data.clientId is string &&
+        data.consultantId is string &&
+        data.clientName is string &&
+        data.consultantName is string &&
+        data.proposedBy is string &&
+        data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+        data.scheduledAt is timestamp &&
+        data.durationMinutes is number && data.durationMinutes > 0 && data.durationMinutes <= 240 &&
+        data.status in ['scheduled', 'confirmed', 'cancelled', 'completed'] &&
+        (!('meetingLink' in data) || data.meetingLink == null || data.meetingLink == '' || isValidUrl(data.meetingLink)) &&
+        (!('notes' in data) || data.notes == null || data.notes is string) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        (!('reminderSentAt' in data) || data.reminderSentAt == null || data.reminderSentAt is timestamp);
+    }
+
     function canCreateCall() {
       return isValidCall(request.resource.data) &&
         exists(/databases/$(database)/documents/consultations/$(request.resource.data.consultationId)) &&
@@ -362,7 +396,7 @@ service cloud.firestore {
 
     function consultantCanUpdateConsultation() {
       return request.auth.uid == resource.data.consultantId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'updatedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'tags', 'internalNotes', 'completedAt']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stage', 'updatedAt', 'reportUrl', 'meetingRecordingUrl', 'callRecordings', 'tags', 'internalNotes', 'completedAt', 'structuredReport', 'consultantReassignmentRequest', 'reassignmentRequestStatus']) &&
         request.resource.data.clientId == resource.data.clientId &&
         request.resource.data.consultantId == resource.data.consultantId &&
         request.resource.data.qualitySpecialistId == resource.data.qualitySpecialistId &&
@@ -443,8 +477,17 @@ service cloud.firestore {
     match /consultantProfiles/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAdmin() && isValidConsultantProfile(request.resource.data);
-      allow update: if isAdmin() && isValidConsultantProfile(request.resource.data) &&
-        areImmutableFieldsUnchanged(['uid']);
+      allow update: if isValidConsultantProfile(request.resource.data) &&
+        areImmutableFieldsUnchanged(['uid']) &&
+        (
+          isAdmin() ||
+          (
+            isAuthenticated() &&
+            request.auth.uid == userId &&
+            request.resource.data.uid == resource.data.uid &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'availabilityNote', 'updatedAt'])
+          )
+        );
     }
 
     match /consultations/{consultationId} {
@@ -568,6 +611,52 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /consultantPayouts/{payoutId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.consultantId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
+          (
+            consultationDoc(resource.data.caseId).clientId == request.auth.uid ||
+            consultationDoc(resource.data.caseId).consultantId == request.auth.uid ||
+            consultationDoc(resource.data.caseId).qualitySpecialistId == request.auth.uid
+          ))
+      );
+
+      allow create: if isAuthenticated() &&
+        isValidMeeting(request.resource.data) &&
+        exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
+        request.resource.data.clientId == consultationDoc(request.resource.data.caseId).clientId &&
+        request.resource.data.consultantId == consultationDoc(request.resource.data.caseId).consultantId &&
+        request.resource.data.proposedBy == request.auth.uid &&
+        (request.auth.uid == request.resource.data.clientId || request.auth.uid == request.resource.data.consultantId);
+
+      allow update: if isAuthenticated() &&
+        isValidMeeting(request.resource.data) &&
+        areImmutableFieldsUnchanged(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'createdAt']) &&
+        exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
+        request.resource.data.caseId == resource.data.caseId &&
+        request.resource.data.clientId == resource.data.clientId &&
+        request.resource.data.consultantId == resource.data.consultantId &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == resource.data.clientId &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'meetingLink', 'notes', 'scheduledAt', 'durationMinutes', 'updatedAt']) &&
+            request.resource.data.status in ['confirmed', 'cancelled']
+          ) ||
+          (
+            request.auth.uid == resource.data.consultantId &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'meetingLink', 'notes', 'scheduledAt', 'durationMinutes', 'updatedAt']) &&
+            request.resource.data.status in ['confirmed', 'cancelled', 'completed']
+          )
+        );
     }
 
     // discountCodes: admin manages; authenticated users may read active codes for

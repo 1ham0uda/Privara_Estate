@@ -3,24 +3,17 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { checkRateLimit, rateLimitResponse } from '@/src/lib/rateLimit';
 import { getAdminAuth, getAdminDb } from '@/src/lib/firebase-admin';
 import { IntakeData } from '@/src/types';
-import {
-  buildCreateSessionSignature,
-  buildGeideaBasicAuth,
-  getGeideaConfig,
-  getGeideaLanguage,
-} from '@/src/lib/geidea';
+import { writeAuditLog } from '@/src/lib/auditLog';
 
 interface InitiateRequestBody {
   intake?: IntakeData;
   caseId?: string;
-  language?: string;
   discountCode?: string;
 }
 
 function isValidIntakeData(value: unknown): value is IntakeData {
   if (!value || typeof value !== 'object') return false;
   const intake = value as Record<string, unknown>;
-  // notes is present in the type but may be empty — do not require non-empty.
   const requiredNonEmpty = [
     intake.goal,
     intake.preferredArea,
@@ -34,17 +27,66 @@ function isValidIntakeData(value: unknown): value is IntakeData {
   );
 }
 
-export async function POST(request: NextRequest) {
-  let config;
-  try {
-    config = getGeideaConfig();
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Geidea is not configured' },
-      { status: 500 },
-    );
-  }
+async function createNotification(data: {
+  userId: string;
+  title: string;
+  message: string;
+  link: string;
+  caseId: string;
+  titleKey: string;
+  messageKey: string;
+  messageParams?: Record<string, string>;
+}) {
+  const adminDb = getAdminDb();
+  await adminDb.collection('notifications').add({
+    ...data,
+    read: false,
+    eventType: 'consultation_created',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
 
+async function notifyOnPaidConsultation(caseId: string, consultation: FirebaseFirestore.DocumentData) {
+  const adminDb = getAdminDb();
+  const clientName = consultation.clientName || 'Client';
+  const consultantName = consultation.consultantName || '';
+  const hasSelectedConsultant = Boolean(consultation.consultantId && consultantName);
+
+  const adminSnapshot = await adminDb.collection('users').where('role', '==', 'admin').get();
+  await Promise.all(
+    adminSnapshot.docs.map((adminDoc) =>
+      createNotification({
+        userId: adminDoc.id,
+        title: 'New consultation request',
+        message: hasSelectedConsultant
+          ? `${clientName} submitted a consultation request and selected ${consultantName}.`
+          : `${clientName} submitted a consultation request without selecting a consultant.`,
+        link: `/admin/cases/${caseId}`,
+        caseId,
+        titleKey: 'notifications.consultation_created.title',
+        messageKey: hasSelectedConsultant
+          ? 'notifications.consultation_created.message_with_consultant'
+          : 'notifications.consultation_created.message_without_consultant',
+        messageParams: { clientName, consultantName },
+      }),
+    ),
+  );
+
+  if (hasSelectedConsultant) {
+    await createNotification({
+      userId: consultation.consultantId,
+      title: 'New consultation assigned to you',
+      message: `${clientName} submitted a consultation request and selected you.`,
+      link: `/consultant/cases/${caseId}`,
+      caseId,
+      titleKey: 'notifications.consultation_assigned.title',
+      messageKey: 'notifications.consultation_assigned.message_consultant',
+      messageParams: { clientName },
+    });
+  }
+}
+
+export async function POST(request: NextRequest) {
   const authorization = request.headers.get('authorization');
   if (!authorization?.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -58,8 +100,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 
-  // 3 payment initiations per user per 5 minutes — prevents accidental double-charges
-  if (!checkRateLimit(`pay-initiate:${uid}`, 3, 5 * 60_000)) return rateLimitResponse();
+  if (!checkRateLimit(`pay-initiate:${uid}`, 10, 5 * 60_000)) return rateLimitResponse();
 
   let body: InitiateRequestBody;
   try {
@@ -70,8 +111,6 @@ export async function POST(request: NextRequest) {
 
   const existingCaseId = typeof body.caseId === 'string' && body.caseId.trim() ? body.caseId.trim() : null;
   const requestedIntake = body.intake;
-  const checkoutLanguage = getGeideaLanguage(body.language);
-  const rawDiscountCode = typeof body.discountCode === 'string' ? body.discountCode.trim().toUpperCase() : null;
 
   if (!existingCaseId && !isValidIntakeData(requestedIntake)) {
     return NextResponse.json({ error: 'A valid intake payload is required' }, { status: 400 });
@@ -80,54 +119,23 @@ export async function POST(request: NextRequest) {
   const adminDb = getAdminDb();
   const settingsSnap = await adminDb.collection('settings').doc('system').get();
   const settingsData = settingsSnap.data() ?? {};
-  const standardFee = settingsData.standardFee ? Number(settingsData.standardFee) : Number(settingsData.consultationFee ?? 500);
+  const standardFee = settingsData.standardFee
+    ? Number(settingsData.standardFee)
+    : Number(settingsData.consultationFee ?? 500);
   const proFee = settingsData.proFee ? Number(settingsData.proFee) : standardFee;
-  const currency = 'EGP';
 
-  // Resolve fee tier: look up consultant's feeTier when one is pre-selected
   const selectedConsultantUid = requestedIntake?.selectedConsultantUid ?? null;
-  let baseFee = standardFee;
+  let consultationFee = standardFee;
   if (selectedConsultantUid) {
     const consultantSnap = await adminDb.collection('consultantProfiles').doc(selectedConsultantUid).get();
     if (consultantSnap.exists && consultantSnap.data()?.feeTier === 'pro') {
-      baseFee = proFee;
+      consultationFee = proFee;
     }
   }
-
-  // Server-side discount validation
-  let discountPercent = 0;
-  let appliedDiscountCode: string | null = null;
-  let discountDocId: string | null = null;
-  if (rawDiscountCode) {
-    const discountSnap = await adminDb
-      .collection('discountCodes')
-      .where('code', '==', rawDiscountCode)
-      .where('active', '==', true)
-      .limit(1)
-      .get();
-    if (!discountSnap.empty) {
-      const discountDoc = discountSnap.docs[0];
-      const dd = discountDoc.data();
-      const now = new Date();
-      const expired = dd.expiresAt && dd.expiresAt.toDate() < now;
-      const exhausted = dd.maxUses !== null && dd.usedCount >= dd.maxUses;
-      if (!expired && !exhausted) {
-        discountPercent = Number(dd.discountPercent ?? 0);
-        appliedDiscountCode = rawDiscountCode;
-        discountDocId = discountDoc.id;
-      }
-    }
-  }
-
-  const consultationFee = discountPercent > 0
-    ? Math.round(baseFee * (1 - discountPercent / 100))
-    : baseFee;
 
   let caseId = existingCaseId;
-  let clientEmail: string | null = null;
 
   if (caseId) {
-    // Retry path: verify case ownership and pending state
     const existingSnap = await adminDb.collection('consultations').doc(caseId).get();
     if (!existingSnap.exists || existingSnap.data()?.clientId !== uid) {
       return NextResponse.json({ error: 'Invalid case for payment retry' }, { status: 400 });
@@ -135,16 +143,10 @@ export async function POST(request: NextRequest) {
     if (existingSnap.data()?.paymentStatus === 'paid') {
       return NextResponse.json({ error: 'This consultation is already paid', caseId }, { status: 400 });
     }
-    // Fetch user email once for the Geidea session (retry path)
-    const userSnap = await adminDb.collection('users').doc(uid).get();
-    clientEmail = userSnap.data()?.email || null;
   } else {
-    // New consultation path: read user once
     const userSnap = await adminDb.collection('users').doc(uid).get();
     const user = userSnap.data() ?? {};
     const clientName: string = user.displayName || user.email || 'Client';
-    clientEmail = user.email || null;
-
     const hasSelectedConsultant = Boolean(
       requestedIntake?.selectedConsultantUid && requestedIntake?.selectedConsultantName,
     );
@@ -176,140 +178,42 @@ export async function POST(request: NextRequest) {
         provider: 'geidea',
         status: 'initiated',
         amount: consultationFee,
-        currency,
+        currency: 'EGP',
         attemptCount: 0,
         initiatedAt: FieldValue.serverTimestamp(),
-        ...(appliedDiscountCode ? { discountCode: appliedDiscountCode, discountPercent } : {}),
       },
     });
-
     caseId = ref.id;
-    // No need to re-read the document — we have all data locally
   }
 
-  const merchantReferenceId = caseId!;
-  const timestamp = new Date().toISOString();
-  const signature = buildCreateSessionSignature(
-    config.publicKey,
-    consultationFee,
-    currency,
-    merchantReferenceId,
-    timestamp,
-    config.apiPassword,
-  );
-
-  const geideaRequestBody = {
-    amount: Number(consultationFee.toFixed(2)),
-    currency,
-    timestamp,
-    merchantReferenceId,
-    signature,
-    callbackUrl: config.callbackUrl,
-    returnUrl: config.returnUrl,
-    paymentOperation: 'Pay',
-    language: checkoutLanguage,
-    ...(clientEmail ? { customer: { email: clientEmail } } : {}),
-    order: {
-      items: [
-        {
-          name: 'Real Estate Consultation',
-          description: 'Real Real Estate consultation fee',
-          count: 1,
-          price: Number(consultationFee.toFixed(2)),
-        },
-      ],
-    },
-  };
-
-  let geideaResponse: Response;
-  try {
-    geideaResponse = await fetch(config.sessionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: buildGeideaBasicAuth(config.publicKey, config.apiPassword),
-      },
-      body: JSON.stringify(geideaRequestBody),
-      cache: 'no-store',
-    });
-  } catch (error) {
-    // Use update() with dot notation — set(merge:true) would overwrite the payment map
-    await adminDb.collection('consultations').doc(caseId!).update({
-      'payment.status': 'session_failed',
-      'payment.lastError': 'Could not reach payment provider',
-      'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    return NextResponse.json(
-      { error: 'Could not reach payment provider', caseId },
-      { status: 502 },
-    );
-  }
-
-  let geideaData: any = null;
-  try {
-    geideaData = await geideaResponse.json();
-  } catch {
-    geideaData = null;
-  }
-
-  if (!geideaResponse.ok || geideaData?.responseCode !== '000' || !geideaData?.session?.id) {
-    await adminDb.collection('consultations').doc(caseId!).update({
-      'payment.status': 'session_failed',
-      'payment.lastError':
-        geideaData?.detailedResponseMessage ||
-        geideaData?.responseMessage ||
-        'Payment session creation failed',
-      'payment.responseCode': geideaData?.responseCode ?? null,
-      'payment.detailedResponseCode':
-        geideaData?.detailedResponseCode ?? geideaData?.detailResponseCode ?? null,
-      'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    return NextResponse.json(
-      {
-        error:
-          geideaData?.detailedResponseMessage ||
-          geideaData?.responseMessage ||
-          'Payment session creation failed',
-        caseId,
-      },
-      { status: 502 },
-    );
-  }
-
-  const sessionId = geideaData.session.id as string;
-
-  // update() with dot notation preserves all existing payment subfields (amount, currency,
-  // initiatedAt, provider, etc.) and correctly handles FieldValue.increment.
-  const updates: Record<string, unknown> = {
-    'payment.status': 'session_created',
-    'payment.geideaSessionId': sessionId,
-    'payment.responseCode': geideaData.responseCode,
-    'payment.responseMessage': geideaData.responseMessage ?? null,
-    'payment.reference': geideaData.reference ?? null,
+  // Temporary fallback mode: immediately confirm payment without external gateway.
+  const ref = adminDb.collection('consultations').doc(caseId!);
+  await ref.update({
+    paymentStatus: 'paid',
+    'payment.status': 'paid',
+    'payment.provider': 'manual_temp',
+    'payment.responseMessage': 'Temporary payment fallback accepted',
+    'payment.paidAt': FieldValue.serverTimestamp(),
     'payment.lastInitiatedAt': FieldValue.serverTimestamp(),
     'payment.attemptCount': FieldValue.increment(1),
     updatedAt: FieldValue.serverTimestamp(),
-  };
-  if (appliedDiscountCode) {
-    updates['payment.discountCode'] = appliedDiscountCode;
-    updates['payment.discountPercent'] = discountPercent;
-  }
-  await adminDb.collection('consultations').doc(caseId!).update(updates);
+  });
 
-  // Atomically increment discount usedCount so the code cannot be over-redeemed
-  if (discountDocId) {
-    await adminDb.collection('discountCodes').doc(discountDocId).update({
-      usedCount: FieldValue.increment(1),
-    });
+  const paidSnap = await ref.get();
+  if (paidSnap.exists) {
+    void notifyOnPaidConsultation(caseId!, paidSnap.data()!);
   }
+
+  writeAuditLog({
+    action: 'payment_success',
+    actorUid: uid,
+    targetId: caseId!,
+    metadata: { mode: 'temporary_fallback', amount: consultationFee, currency: 'EGP' },
+  });
 
   return NextResponse.json({
-    sessionId,
     caseId,
-    checkoutScriptUrl: config.checkoutScriptUrl,
+    mode: 'temporary_fallback',
   });
 }
+

@@ -21,11 +21,23 @@ service firebase.storage {
       );
     }
 
-    match /chat/{caseId}/{fileName} {
+    match /chat/{caseId}/{allPaths=**} {
       allow read: if isAuthenticated() && isConsultationParticipant(caseId);
       allow write: if isAuthenticated() && isConsultationParticipant(caseId) &&
                    request.resource.size < 15 * 1024 * 1024 && // 15MB limit for audio/video
-                   (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('audio/.*') || request.resource.contentType.matches('video/.*'));
+                   (
+                     request.resource.contentType.matches('image/.*') ||
+                     request.resource.contentType.matches('audio/.*') ||
+                     request.resource.contentType.matches('video/.*') ||
+                     request.resource.contentType.matches('application/pdf') ||
+                     request.resource.contentType.matches('text/.*') ||
+                     request.resource.contentType == 'application/msword' ||
+                     request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                     request.resource.contentType == 'application/vnd.ms-excel' ||
+                     request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                     request.resource.contentType == 'application/vnd.ms-powerpoint' ||
+                     request.resource.contentType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                   );
     }
 
     match /reports/{caseId}/{fileName} {
@@ -35,6 +47,15 @@ service firebase.storage {
         (firestore.exists(/databases/(default)/documents/consultations/$(caseId)) &&
          firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
       ) && request.resource.size < 10 * 1024 * 1024 && request.resource.contentType == 'application/pdf';
+    }
+
+    match /reports/{caseId}/photos/{fileName} {
+      allow read: if isAuthenticated() && isConsultationParticipant(caseId);
+      allow write: if isAuthenticated() && (
+        isAdmin() ||
+        (firestore.exists(/databases/(default)/documents/consultations/$(caseId)) &&
+         firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.consultantId == request.auth.uid)
+      ) && request.resource.size < 15 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
     }
 
     match /meetings/{caseId}/{fileName} {
@@ -54,6 +75,20 @@ service firebase.storage {
         (
           request.resource.contentType.matches('audio/.*') ||
           request.resource.contentType == 'video/webm'
+        );
+    }
+
+    match /audit-evidence/{caseId}/{fileName} {
+      allow read: if isAuthenticated() && isConsultationParticipant(caseId);
+      allow write: if isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/consultations/$(caseId)) &&
+        firestore.get(/databases/(default)/documents/consultations/$(caseId)).data.qualitySpecialistId == request.auth.uid &&
+        request.resource.size < 25 * 1024 * 1024 &&
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType.matches('video/.*') ||
+          request.resource.contentType == 'application/pdf'
         );
     }
     

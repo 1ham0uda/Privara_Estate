@@ -211,6 +211,9 @@ export default function MeetingsPanel({
                 placeholder={t('meeting.link_placeholder')}
                 className={`w-full bg-white border border-soft-blue rounded-xl px-3 py-2 text-sm text-ink outline-none focus:border-blue-300 ${isRTL ? 'text-right' : ''}`}
               />
+              <p className="mt-1 text-[11px] text-brand-slate/80">
+                {t('meeting.external_fallback_hint')}
+              </p>
             </div>
 
             {/* Notes */}
