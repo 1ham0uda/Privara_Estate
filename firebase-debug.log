@@ -1,0 +1,10 @@
+[debug] [2026-05-02T17:15:06.642Z] ----------------------------------------------------------------------
+[debug] [2026-05-02T17:15:06.647Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\hamod\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-05-02T17:15:06.648Z] CLI Version:   15.15.0
+[debug] [2026-05-02T17:15:06.648Z] Platform:      win32
+[debug] [2026-05-02T17:15:06.649Z] Node Version:  v22.16.0
+[debug] [2026-05-02T17:15:06.650Z] Time:          Sat May 02 2026 20:15:06 GMT+0300 (Eastern European Summer Time)
+[debug] [2026-05-02T17:15:06.650Z] ----------------------------------------------------------------------
+[debug] 
+[error] 
+[error] Error: Not in a Firebase app directory (could not locate firebase.json)
