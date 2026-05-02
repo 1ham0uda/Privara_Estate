@@ -159,6 +159,8 @@ export default function ChatPage() {
   const localAudioRef = useRef<HTMLAudioElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoFallbackRef = useRef<HTMLVideoElement>(null);
+  const localVideoFallbackRef = useRef<HTMLVideoElement>(null);
   const remoteVideoContainerRef = useRef<HTMLDivElement>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const remoteCandidateIdsRef = useRef<Set<string>>(new Set());
@@ -483,10 +485,18 @@ export default function ChatPage() {
       remoteVideoRef.current.pause();
       remoteVideoRef.current.srcObject = null;
     }
+    if (remoteVideoFallbackRef.current) {
+      remoteVideoFallbackRef.current.pause();
+      remoteVideoFallbackRef.current.srcObject = null;
+    }
 
     if (localVideoRef.current) {
       localVideoRef.current.pause();
       localVideoRef.current.srcObject = null;
+    }
+    if (localVideoFallbackRef.current) {
+      localVideoFallbackRef.current.pause();
+      localVideoFallbackRef.current.srcObject = null;
     }
 
     stopRemotePlayback();
@@ -904,10 +914,13 @@ export default function ChatPage() {
       return;
     }
 
-    // Attach video tracks to the remote video element
-    if (remoteVideoRef.current && remoteStream.getVideoTracks().length > 0) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(() => {});
+    // Attach video tracks to both visible and fallback video elements.
+    if (remoteStream.getVideoTracks().length > 0) {
+      [remoteVideoRef.current, remoteVideoFallbackRef.current].forEach((el) => {
+        if (!el) return;
+        el.srcObject = remoteStream;
+        el.play().catch(() => {});
+      });
     }
 
     try {
@@ -1052,6 +1065,19 @@ export default function ChatPage() {
 
     return peerConnection;
   };
+
+  const renegotiateCallMedia = useCallback(async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !activeCall) return;
+    if (pc.signalingState !== 'stable') return;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await callService.saveOffer(activeCall.id, offer);
+    } catch {
+      // keep call alive even if renegotiation fails
+    }
+  }, [activeCall]);
 
   const prepareLocalStream = async () => {
     try {
@@ -1219,18 +1245,22 @@ export default function ChatPage() {
         localStreamRef.current?.removeTrack(t);
       });
       if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      if (localVideoFallbackRef.current) localVideoFallbackRef.current.srcObject = null;
       setVideoEnabled(false);
+      await renegotiateCallMedia();
     } else {
       try {
         const videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
         const videoTrack = videoStream.getVideoTracks()[0];
         localStreamRef.current?.addTrack(videoTrack);
         pc.addTrack(videoTrack, localStreamRef.current!);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStreamRef.current;
-          localVideoRef.current.play().catch(() => {});
-        }
+        [localVideoRef.current, localVideoFallbackRef.current].forEach((el) => {
+          if (!el) return;
+          el.srcObject = localStreamRef.current;
+          el.play().catch(() => {});
+        });
         setVideoEnabled(true);
+        await renegotiateCallMedia();
       } catch {
         toast.error(t('call.camera_failed') || 'Failed to access camera');
       }
@@ -1263,6 +1293,7 @@ export default function ChatPage() {
         }
       } else {
         videoSenders.forEach((s) => pc.removeTrack(s));
+        await renegotiateCallMedia();
       }
       setScreenSharing(false);
     } else {
@@ -1284,6 +1315,10 @@ export default function ChatPage() {
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = screenStream;
           localVideoRef.current.play().catch(() => {});
+        }
+        if (localVideoFallbackRef.current) {
+          localVideoFallbackRef.current.srcObject = screenStream;
+          localVideoFallbackRef.current.play().catch(() => {});
         }
 
         screenTrack.onended = () => {
@@ -1317,13 +1352,14 @@ export default function ChatPage() {
         .catch(() => undefined);
     }
 
-    // Callee: re-apply offer when caller triggers an ICE restart (offer SDP changes)
+    // Either side: re-apply remote offer updates (initial offer, ICE restart, or media renegotiation)
     if (
       activeCall.offer?.sdp &&
-      !isCallInitiator &&
       peerConnectionRef.current &&
       peerConnectionRef.current.signalingState !== 'closed' &&
-      activeCall.offer.sdp !== lastAppliedOfferSdpRef.current
+      activeCall.offer.sdp !== lastAppliedOfferSdpRef.current &&
+      activeCall.offer.sdp !== peerConnectionRef.current.localDescription?.sdp &&
+      peerConnectionRef.current.signalingState === 'stable'
     ) {
       const pc = peerConnectionRef.current;
       lastAppliedOfferSdpRef.current = activeCall.offer.sdp;
@@ -1832,8 +1868,8 @@ export default function ChatPage() {
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <audio ref={localAudioRef} autoPlay muted className="hidden" />
       {/* Fallback video elements (used when call panel is closed) */}
-      <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
-      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
+      <video ref={remoteVideoFallbackRef} autoPlay playsInline className="hidden" />
+      <video ref={localVideoFallbackRef} autoPlay playsInline muted className="hidden" />
 
       {/* ── Lightbox ── */}
       {lightboxImage && (
