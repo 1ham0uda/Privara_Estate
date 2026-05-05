@@ -41,6 +41,7 @@ import { toast, Toaster } from 'react-hot-toast';
 import Image from 'next/image';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { auth } from '@/src/lib/firebase';
+import MeetingsPanel from '@/src/components/MeetingsPanel';
 
 const CALL_TIMEOUT_MS = 45_000;
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
@@ -151,6 +152,10 @@ export default function ChatPage() {
   const [callBusy, setCallBusy] = useState(false);
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
   const [isRemoteVideoFullscreen, setIsRemoteVideoFullscreen] = useState(false);
+  const [showMeetings, setShowMeetings] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [meetingLinkInput, setMeetingLinkInput] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -736,6 +741,7 @@ export default function ChatPage() {
         imageUrl
       );
       setNewMessage('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
       setSelectedImage(null);
       setImagePreview(null);
     } catch {
@@ -767,8 +773,14 @@ export default function ChatPage() {
     }
   };
 
-  const handleProvideMeetingLink = async () => {
-    const link = prompt(`${t('chat.meeting_link_prompt') || 'Please provide the meeting link (Zoom, Google Meet, etc.):'}\n\n${t('chat.external_meeting_fallback')}`);
+  const handleProvideMeetingLink = () => {
+    setMeetingLinkInput('');
+    setShowLinkModal(true);
+    setShowActions(false);
+  };
+
+  const handleSubmitMeetingLink = async () => {
+    const link = meetingLinkInput.trim();
     if (!link || !profile || !caseId || !consultation) return;
     try {
       await chatService.sendMessage(
@@ -784,7 +796,8 @@ export default function ChatPage() {
         'meeting_link'
       );
       toast.success(t('chat.link_sent_success'));
-      setShowActions(false);
+      setMeetingLinkInput('');
+      setShowLinkModal(false);
     } catch {
       toast.error(t('chat.link_failed'));
     }
@@ -1504,6 +1517,17 @@ export default function ChatPage() {
               </button>
             )}
 
+            {(profile?.role === 'client' || profile?.role === 'consultant') && !chatLockedUntilAssignment && (
+              <button
+                type="button"
+                onClick={() => setShowMeetings(true)}
+                title={t('meeting.panel_title')}
+                className="p-2.5 rounded-full text-brand-slate hover:text-ink hover:bg-soft-blue transition-colors"
+              >
+                <Calendar className="w-[18px] h-[18px]" />
+              </button>
+            )}
+
             <div className="relative">
               <button
                 type="button"
@@ -1797,12 +1821,24 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <div className="flex-1 flex items-center bg-soft-blue rounded-2xl px-3.5 py-2.5 gap-2">
-                  <input
-                    type="text"
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
                     placeholder={t('chat.placeholder')}
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-brand-slate outline-none"
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e as unknown as React.FormEvent);
+                      }
+                    }}
+                    className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-brand-slate outline-none resize-none leading-5 max-h-32 overflow-y-auto"
                   />
                 </div>
               )}
@@ -1890,6 +1926,81 @@ export default function ChatPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <Image src={lightboxImage} alt="Chat image preview" fill className="object-contain" unoptimized sizes="100vw" />
+          </div>
+        </div>
+      )}
+
+      {/* ── Meeting link modal ── */}
+      {showLinkModal && (
+        <div
+          className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center"
+          onClick={() => setShowLinkModal(false)}
+        >
+          <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-ink mb-4">{t('meeting.provide_link')}</h3>
+            <input
+              type="url"
+              value={meetingLinkInput}
+              onChange={(e) => setMeetingLinkInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitMeetingLink(); }}
+              placeholder="https://..."
+              autoFocus
+              className="w-full border border-soft-blue rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-brand-slate outline-none focus:border-brand-slate transition-colors mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLinkModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-soft-blue text-sm font-medium text-brand-slate hover:bg-soft-blue transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitMeetingLink}
+                disabled={!meetingLinkInput.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-ink text-sm font-medium text-white hover:bg-ink/90 disabled:opacity-50 transition-colors"
+              >
+                {t('common.send')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Meetings panel drawer ── */}
+      {showMeetings && consultation && profile && (
+        <div
+          className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center"
+          onClick={() => setShowMeetings(false)}
+        >
+          <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90dvh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-soft-blue shrink-0">
+              <h3 className="text-base font-semibold text-ink">{t('meeting.panel_title')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowMeetings(false)}
+                className="p-1.5 rounded-full text-brand-slate hover:bg-soft-blue transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <MeetingsPanel
+                consultation={consultation}
+                currentUserId={profile.uid}
+                currentUserName={profile.displayName || profile.email || ''}
+                currentRole={profile.role as 'client' | 'consultant' | 'admin' | 'quality'}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -211,6 +212,10 @@ export const callService = {
         recordingUrl,
         recordingStatus: 'ready',
         durationSec,
+      });
+      // Persist URL to the consultation document so Quality Specialists can access it.
+      await updateDoc(doc(db, 'consultations', consultationId), {
+        callRecordings: arrayUnion(recordingUrl),
       });
       return recordingUrl;
     } catch (error) {

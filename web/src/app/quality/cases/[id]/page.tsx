@@ -264,37 +264,40 @@ export default function QualityCaseReview() {
                 )}
               </Card>
 
-              {/* Call Recordings */}
+              {/* Call Recordings — sourced from the calls collection via subscribeToCallHistory */}
               <Card className="p-8 border-none shadow-sm bg-white" hover={false}>
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <Mic className="w-6 h-6 text-indigo-500" /> {t('quality.call_recordings')}
                 </h2>
-                {consultation.callRecordings && consultation.callRecordings.length > 0 ? (
+                {recordedCalls.length > 0 ? (
                   <div className="space-y-4">
-                    {consultation.callRecordings.map((url, idx) => (
-                      <div key={idx} className="p-4 bg-cloud rounded-xl flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                            <Mic className="w-5 h-5 text-indigo-500" />
+                    {recordedCalls.map((call, idx) => {
+                      const url = call.recordingUrl!;
+                      return (
+                        <div key={call.id} className="p-4 bg-cloud rounded-xl flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                              <Mic className="w-5 h-5 text-indigo-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
+                              <p className="text-[10px] text-brand-slate">{t('quality.recorded_call')}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
-                            <p className="text-[10px] text-brand-slate">{t('quality.recorded_call')}</p>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => toggleAudio(url)}
+                              className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-600/20 hover:scale-105 transition-transform"
+                            >
+                              {playingAudio === url ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                            </button>
+                            <a href={url} download target="_blank" rel="noreferrer" className="p-2 text-brand-slate hover:text-ink">
+                              <Download className="w-5 h-5" />
+                            </a>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => toggleAudio(url)}
-                            className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-600/20 hover:scale-105 transition-transform"
-                          >
-                            {playingAudio === url ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                          </button>
-                          <a href={url} download target="_blank" rel="noreferrer" className="p-2 text-brand-slate hover:text-ink">
-                            <Download className="w-5 h-5" />
-                          </a>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-12 text-center bg-cloud rounded-2xl border-dashed border-2 border-soft-blue">

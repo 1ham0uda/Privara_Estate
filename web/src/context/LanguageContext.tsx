@@ -1166,6 +1166,10 @@ const translations: Record<Language, Record<string, string>> = {
     // Admin settings fee tiers
     'admin.dashboard.modal.settings.standard_fee': 'Standard Consultation Fee',
     'admin.dashboard.modal.settings.pro_fee': 'Pro Consultant Fee',
+
+    'common.select': 'Select',
+    'notFound.description': "The page you're looking for doesn't exist or may have been moved.",
+    'notFound.back_home': 'Back to Home',
   },
   ar: {
     'nav.home': 'الرئيسية',
@@ -1434,7 +1438,7 @@ const translations: Record<Language, Record<string, string>> = {
     'dashboard.no_history': 'لا يوجد سجل استشارات بعد.',
     'dashboard.consultant_title': 'لوحة تحكم مستشار',
     'dashboard.consultant_subtitle': 'إدارة حالات العقارات المسندة إليك وتواصلك مع العملاء.',
-    'dashboard.active_cases_count_ar': 'الحالات النشطة',
+    'dashboard.active_cases': 'الحالات النشطة',
     'dashboard.completed': 'المكتملة',
     'dashboard.avg_rating': 'متوسط التقييم',
     'dashboard.recent_feedback': 'التعليقات الأخيرة',
