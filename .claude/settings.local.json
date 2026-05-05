@@ -23,7 +23,8 @@
       "Bash(npm run *)",
       "Bash(dir \"d:\\\\projects_H\\\\Privara Estate\\\\web\" /b)",
       "Bash(npx vitest *)",
-      "Bash(./node_modules/.bin/vitest run *)"
+      "Bash(./node_modules/.bin/vitest run *)",
+      "Bash(gcloud beta *)"
     ]
   }
 }
