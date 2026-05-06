@@ -23,7 +23,7 @@ import { db, auth, storage } from './firebase';
 import {
   UserProfile, ConsultationCase, Message, ChangeRequest, ConsultantProfile,
   QualityAuditReport, UserRole, AppNotification, NotificationEventType,
-  SystemSettings, ScheduledMeeting, RatingDetails, StructuredReport,
+  SystemSettings, RatingDetails, StructuredReport,
   ReportSection, ComparableProperty, NotificationPreferences,
   ConsultantAvailability, PaginatedResult, AuditCriterion,
   ConsultantSettlement, ConsultantPayoutSummary, FinancePeriodKey, FinanceRange,
@@ -444,24 +444,6 @@ export const consultationService = {
       await this.updateConsultation(id, {
         reportUrl: downloadURL,
         status: 'report_sent'
-      });
-
-      return downloadURL;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-  },
-
-  async uploadMeetingRecording(id: string, file: File): Promise<string> {
-    const path = `consultations/${id}/meeting`;
-    try {
-      const ext = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
-      const storageRef = ref(storage, `meetings/${id}/${crypto.randomUUID()}${ext}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-
-      await this.updateConsultation(id, {
-        meetingRecordingUrl: downloadURL,
       });
 
       return downloadURL;
@@ -1210,63 +1192,6 @@ export const availabilityService = {
   },
 };
 
-// ─── Scheduled meetings ────────────────────────────────────────────────────────
-export const meetingService = {
-  async proposeMeeting(meeting: Omit<ScheduledMeeting, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    try {
-      const ref = await addDoc(collection(db, 'meetings'), {
-        ...meeting,
-        status: 'scheduled',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      return ref.id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'meetings');
-    }
-  },
-
-  async updateMeeting(id: string, updates: Partial<ScheduledMeeting>): Promise<void> {
-    try {
-      await updateDoc(doc(db, 'meetings', id), { ...updates, updatedAt: serverTimestamp() });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `meetings/${id}`);
-    }
-  },
-
-  subscribeToMeetings(caseId: string, callback: (meetings: ScheduledMeeting[]) => void) {
-    const q = query(
-      collection(db, 'meetings'),
-      where('caseId', '==', caseId),
-      orderBy('scheduledAt', 'asc')
-    );
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ScheduledMeeting)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'meetings'));
-  },
-
-  generateICS(meeting: ScheduledMeeting): string {
-    const start = meeting.scheduledAt?.toDate ? meeting.scheduledAt.toDate() : new Date(meeting.scheduledAt);
-    const end = new Date(start.getTime() + meeting.durationMinutes * 60 * 1000);
-    const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    return [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Real Real Estate//EN',
-      'BEGIN:VEVENT',
-      `UID:${meeting.id}@realrealestate`,
-      `DTSTAMP:${fmt(new Date())}`,
-      `DTSTART:${fmt(start)}`,
-      `DTEND:${fmt(end)}`,
-      `SUMMARY:${meeting.title}`,
-      meeting.notes ? `DESCRIPTION:${meeting.notes}` : '',
-      meeting.meetingLink ? `URL:${meeting.meetingLink}` : '',
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].filter(Boolean).join('\r\n');
-  },
-};
-
 // ─── Structured report builder ────────────────────────────────────────────────
 export const reportBuilderService = {
   async saveReport(caseId: string, report: StructuredReport): Promise<void> {
@@ -1340,7 +1265,6 @@ export const preferencesService = {
         consultant_reassigned: true,
         support_ticket_replied: true,
         audit_report_submitted: true,
-        meeting_reminder: true,
         rating_reminder: true,
       },
     };

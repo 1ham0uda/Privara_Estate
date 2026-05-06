@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { consultationService, userService, availabilityService } from '@/src/lib/db';
-import MeetingsPanel from '@/src/components/MeetingsPanel';
 import { Star } from 'lucide-react';
 import { ConsultationCase, UserProfile, ConsultationStatus, ConsultationStage } from '@/src/types';
 import { Card, Badge, Button } from '@/src/components/UI';
@@ -20,10 +19,8 @@ import {
   MapPin,
   Target,
   DollarSign,
-  Calendar,
   Save,
   Tag,
-  Video
 } from 'lucide-react';
 import { formatDate } from '@/src/lib/utils';
 import Navbar from '@/src/components/Navbar';
@@ -44,7 +41,6 @@ export default function ConsultantCaseDetails() {
   const [internalNotes, setInternalNotes] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadingMeeting, setUploadingMeeting] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [reassignReason, setReassignReason] = useState('');
@@ -96,24 +92,6 @@ export default function ConsultantCaseDetails() {
       toast.error(t('consultant.case_details.error_report'));
     } finally {
       setUploading(false);
-    }
-  };
-
-  const handleMeetingUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !caseId) return;
-
-    setUploadingMeeting(true);
-    try {
-      const url = await consultationService.uploadMeetingRecording(caseId as string, file);
-      if (url) {
-        setConsultation(prev => prev ? { ...prev, meetingRecordingUrl: url } : null);
-        toast.success(t('consultant.success_meeting_upload'));
-      }
-    } catch (error) {
-      toast.error(t('consultant.error_meeting_upload'));
-    } finally {
-      setUploadingMeeting(false);
     }
   };
 
@@ -466,76 +444,6 @@ export default function ConsultantCaseDetails() {
                     </label>
                   </div>
                 )}
-              </Card>
-            </section>
-
-            {/* Meeting Recording Upload */}
-            <section>
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <Video className="w-5 h-5 text-brand-slate" /> {t('consultant.case_details.meeting_upload')}
-              </h2>
-              <Card className="p-6 border-none shadow-sm" hover={false}>
-                {consultation.meetingRecordingUrl ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 p-3 bg-blue-50 text-blue-700 rounded-xl border border-blue-100">
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span className="text-xs font-bold">{t('quality.meeting_recorded')}</span>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <a 
-                        href={consultation.meetingRecordingUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-500 hover:underline flex items-center gap-1"
-                      >
-                        <Video className="w-3 h-3" /> {t('quality.meeting_recording')}
-                      </a>
-                      <label className="cursor-pointer">
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          accept="video/*"
-                          onChange={handleMeetingUpload}
-                          disabled={uploadingMeeting}
-                        />
-                        <Button variant="outline" className="w-full h-10 text-sm rounded-xl" as="span">
-                          {t('consultant.case_details.select_file')}
-                        </Button>
-                      </label>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <label className="cursor-pointer block">
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        accept="video/*"
-                        onChange={handleMeetingUpload}
-                        disabled={uploadingMeeting}
-                      />
-                      <div className="border-2 border-dashed border-soft-blue rounded-2xl p-8 text-center hover:border-soft-blue transition-all">
-                        <Video className="w-8 h-8 text-brand-slate/40 mx-auto mb-2" />
-                        <p className="text-xs text-brand-slate">{t('consultant.case_details.meeting_desc')}</p>
-                      </div>
-                      <Button className="w-full h-10 text-sm rounded-xl mt-4" as="span" loading={uploadingMeeting}>
-                        <Upload className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} /> {t('consultant.case_details.select_file')}
-                      </Button>
-                    </label>
-                  </div>
-                )}
-              </Card>
-            </section>
-
-            {/* Scheduled Meetings */}
-            <section>
-              <Card hover={false} className="p-6 border-none shadow-sm">
-                <MeetingsPanel
-                  consultation={consultation}
-                  currentUserId={profile!.uid}
-                  currentUserName={profile!.displayName}
-                  currentRole={profile!.role}
-                />
               </Card>
             </section>
 

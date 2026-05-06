@@ -8,8 +8,7 @@ import { Card, Badge, Button, Skeleton, SkeletonCard } from '@/src/components/UI
 import { 
   ClipboardCheck, 
   MessageSquare, 
-  Mic, 
-  Video, 
+  Mic,
   ChevronRight,
   Search,
   Filter,
@@ -208,11 +207,6 @@ export default function QualityDashboard() {
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {formatDate(c.createdAt, language)}
                           </span>
-                          {c.meetingRecordingUrl && (
-                            <span className="flex items-center gap-1 text-blue-500 font-medium">
-                              <Video className="w-3 h-3" /> {t('quality.meeting_recorded')}
-                            </span>
-                          )}
                           {c.callRecordings && c.callRecordings.length > 0 && (
                             <span className="flex items-center gap-1 text-indigo-500 font-medium">
                               <Mic className="w-3 h-3" /> {c.callRecordings.length} {t('quality.calls_recorded')}

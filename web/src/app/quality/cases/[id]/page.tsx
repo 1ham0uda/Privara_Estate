@@ -10,9 +10,8 @@ import { Card, Badge, Button } from '@/src/components/UI';
 import { 
   ChevronLeft, 
   MessageSquare, 
-  Mic, 
-  Video, 
-  Play, 
+  Mic,
+  Play,
   Pause, 
   Download,
   ClipboardCheck,
@@ -42,7 +41,6 @@ export default function QualityCaseReview() {
   const [auditForm, setAuditForm] = useState({
     classification: 'non-critical' as 'critical' | 'non-critical',
     notes: '',
-    meetingStatus: 'recorded' as 'recorded' | 'not-recorded' | 'failed',
     capaRequired: false,
     capaDescription: '',
     capaStatus: 'open' as CapaStatus,
@@ -109,7 +107,6 @@ export default function QualityCaseReview() {
         specialistName: profile.displayName || 'Quality Specialist',
         classification: auditForm.classification,
         notes: auditForm.notes,
-        meetingStatus: auditForm.meetingStatus,
         status: 'completed',
         criteria,
         totalScore,
@@ -192,7 +189,7 @@ export default function QualityCaseReview() {
                         <span className="text-[10px] text-brand-slate px-1">{formatDate(m.createdAt, language)}</span>
                       </div>
                       <div className={`max-w-[80%] p-4 rounded-2xl ${m.senderId === consultation.clientId ? 'bg-soft-blue text-ink rounded-tl-none' : 'bg-ink text-white rounded-tr-none'}`}>
-                        {(m.type === 'text' || m.type === 'meeting_request' || m.type === 'meeting_link' || m.type === 'call_log') && (
+                        {(m.type === 'text' || m.type === 'call_log') && (
                           <p className="text-sm whitespace-pre-wrap">{m.text}</p>
                         )}
                         {m.type === 'image' && m.imageUrl && (
@@ -231,39 +228,6 @@ export default function QualityCaseReview() {
 
           {activeTab === 'recordings' && (
             <div className="space-y-8">
-              {/* Meeting Recording */}
-              <Card className="p-8 border-none shadow-sm bg-white" hover={false}>
-                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                  <Video className="w-6 h-6 text-blue-500" /> {t('quality.meeting_recording')}
-                </h2>
-                {consultation.meetingRecordingUrl ? (
-                  <div className="space-y-4">
-                    <div className="aspect-video bg-ink rounded-2xl overflow-hidden shadow-2xl">
-                      <video 
-                        src={consultation.meetingRecordingUrl} 
-                        controls 
-                        className="w-full h-full"
-                      />
-                    </div>
-                    <div className="flex justify-end">
-                      <a 
-                        href={consultation.meetingRecordingUrl} 
-                        download 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="flex items-center gap-2 text-sm text-blue-500 font-medium hover:underline"
-                      >
-                        <Download className="w-4 h-4" /> {t('quality.download')}
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-12 text-center bg-cloud rounded-2xl border-dashed border-2 border-soft-blue">
-                    <p className="text-brand-slate">{t('quality.no_meeting')}</p>
-                  </div>
-                )}
-              </Card>
-
               {/* Call Recordings — sourced from the calls collection via subscribeToCallHistory */}
               <Card className="p-8 border-none shadow-sm bg-white" hover={false}>
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
@@ -324,7 +288,6 @@ export default function QualityCaseReview() {
                             <Badge variant={r.classification === 'critical' ? 'error' : 'success'}>
                               {r.classification === 'critical' ? t('dashboard.critical') : t('dashboard.non_critical')}
                             </Badge>
-                            <Badge variant="info">{t('quality.label_meeting_status')}: {t(`quality.meeting_${r.meetingStatus.replace('-', '_')}`)}</Badge>
                           </div>
                           <span className="text-xs text-brand-slate">{formatDate(r.createdAt, language)}</span>
                         </div>
@@ -359,15 +322,6 @@ export default function QualityCaseReview() {
                             <XCircle className="w-4 h-4" /> {t('dashboard.critical')}
                           </button>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-brand-slate uppercase mb-3">{t('quality.label_meeting_status')}</label>
-                        <select value={auditForm.meetingStatus} onChange={(e) => setAuditForm({...auditForm, meetingStatus: e.target.value as any})}
-                          className="w-full px-4 py-3 bg-cloud border border-soft-blue rounded-xl focus:border-blue-600 focus:outline-none">
-                          <option value="recorded">{t('quality.meeting_recorded_success')}</option>
-                          <option value="not-recorded">{t('quality.meeting_not_recorded')}</option>
-                          <option value="failed">{t('quality.meeting_failed')}</option>
-                        </select>
                       </div>
                     </div>
 

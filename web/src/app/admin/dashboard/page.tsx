@@ -316,9 +316,9 @@ export default function AdminDashboard() {
       const period = financeService.getPeriodBoundaries(new Date());
       await financeService.buildConsultantPayoutsForPeriod(period.start, period.end);
       await refreshPayouts();
-      toast.success('تم تجهيز دورة المستحقات الحالية');
+      toast.success(t('admin.analytics.payouts_built_success'));
     } catch (error) {
-      toast.error('فشل تجهيز دورة المستحقات');
+      toast.error(t('admin.analytics.payouts_build_error'));
     } finally {
       setIsBuildingPayouts(false);
     }
@@ -328,31 +328,31 @@ export default function AdminDashboard() {
     if (!profile) return;
     const reference = (payoutReferenceById[payoutId] || '').trim();
     if (!reference) {
-      toast.error('أدخل مرجع التحويل البنكي أولاً');
+      toast.error(t('admin.analytics.bank_ref_required'));
       return;
     }
     try {
       await financeService.markPayoutAsPaid(payoutId, reference, profile.uid);
       await refreshPayouts();
-      toast.success('تم اعتماد الدفع كمكتمل');
+      toast.success(t('admin.analytics.payment_confirmed'));
     } catch {
-      toast.error('تعذر تحديث حالة الدفع');
+      toast.error(t('admin.analytics.payment_confirm_error'));
     }
   };
 
   const handleConsultantPriceSave = async (consultantId: string, rawValue: string) => {
     const value = Number(rawValue);
     if (!Number.isFinite(value) || value <= 0) {
-      toast.error('سعر غير صالح');
+      toast.error(t('admin.analytics.invalid_price'));
       return;
     }
     try {
       await financeService.updateConsultantPricing(consultantId, value);
       const updated = await consultantService.getAllConsultants();
       setConsultants(updated);
-      toast.success('تم تحديث سعر المستشار');
+      toast.success(t('admin.analytics.price_updated'));
     } catch {
-      toast.error('تعذر تحديث السعر');
+      toast.error(t('admin.analytics.price_update_error'));
     }
   };
 
@@ -905,12 +905,6 @@ export default function AdminDashboard() {
                                 {t(`quality.classification.${report.classification}`)}
                               </Badge>
                             </div>
-                            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                              <span className="text-xs font-medium text-brand-slate">{t('quality.meetingStatus')}:</span>
-                              <Badge variant={report.meetingStatus === 'recorded' ? 'success' : report.meetingStatus === 'failed' ? 'error' : 'warning'} className="text-[10px]">
-                                {t(`quality.meetingStatus.${report.meetingStatus}`)}
-                              </Badge>
-                            </div>
                           </div>
                           <div className="bg-soft-blue p-3 rounded-lg">
                             <p className="text-sm break-words"><span className="font-medium">{t('quality.notes')}:</span> {report.notes}</p>
@@ -941,103 +935,103 @@ export default function AdminDashboard() {
         ) : activeTab === 'analytics' ? (
           <div className="space-y-6">
             <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
-              <div className="flex flex-col lg:flex-row gap-4 lg:items-end lg:justify-between">
+              <div className={`flex flex-col lg:flex-row gap-4 lg:items-end lg:justify-between ${isRTL ? 'lg:flex-row-reverse text-right' : ''}`}>
                 <div>
-                  <h2 className="text-xl font-bold text-ink">لوحة العوائد والدفع للمستشارين</h2>
-                  <p className="text-sm text-brand-slate">الدورة المالية تعتمد على الفترة من يوم 20 حتى يوم 19 من الشهر التالي.</p>
+                  <h2 className="text-xl font-bold text-ink">{t('admin.analytics.payouts_title')}</h2>
+                  <p className="text-sm text-brand-slate">{t('admin.analytics.payouts_subtitle')}</p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={handleBuildPayouts} loading={isBuildingPayouts}>
-                    تجهيز مستحقات الدورة الحالية
+                    {t('admin.analytics.build_payouts_btn')}
                   </Button>
                 </div>
               </div>
             </Card>
 
             <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
-              <h3 className="font-bold mb-4">إعدادات التسعير والنسبة</h3>
+              <h3 className={`font-bold mb-4 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.pricing_settings_title')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
-                  <label className="text-xs text-brand-slate block mb-1">نسبة المستشار الثابتة (%)</label>
-                  <input type="number" min={1} max={100} value={consultantRevenueSharePercent} onChange={(e) => setConsultantRevenueSharePercent(Number(e.target.value))} className="w-full h-10 px-3 border border-soft-blue rounded-xl" />
+                  <label className={`text-xs text-brand-slate block mb-1 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.consultant_share_label')}</label>
+                  <input type="number" min={1} max={100} value={consultantRevenueSharePercent} onChange={(e) => setConsultantRevenueSharePercent(Number(e.target.value))} className={`w-full h-10 px-3 border border-soft-blue rounded-xl ${isRTL ? 'text-right' : ''}`} />
                 </div>
                 <div>
-                  <label className="text-xs text-brand-slate block mb-1">نطاق التحليل</label>
-                  <select value={selectedFinanceRange} onChange={(e) => setSelectedFinanceRange(e.target.value as any)} className="w-full h-10 px-3 border border-soft-blue rounded-xl">
-                    <option value="daily">يومي</option>
-                    <option value="weekly">أسبوعي</option>
-                    <option value="monthly">شهري</option>
+                  <label className={`text-xs text-brand-slate block mb-1 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.analysis_range_label')}</label>
+                  <select value={selectedFinanceRange} onChange={(e) => setSelectedFinanceRange(e.target.value as any)} className={`w-full h-10 px-3 border border-soft-blue rounded-xl ${isRTL ? 'text-right' : ''}`}>
+                    <option value="daily">{t('admin.analytics.range_daily')}</option>
+                    <option value="weekly">{t('admin.analytics.range_weekly')}</option>
+                    <option value="monthly">{t('admin.analytics.range_monthly')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-brand-slate block mb-1">نوع العوائد</label>
-                  <select value={financeMetric} onChange={(e) => setFinanceMetric(e.target.value as any)} className="w-full h-10 px-3 border border-soft-blue rounded-xl">
-                    <option value="gross">إجمالي</option>
-                    <option value="net">صافي بعد الخصومات</option>
+                  <label className={`text-xs text-brand-slate block mb-1 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.revenue_type_label')}</label>
+                  <select value={financeMetric} onChange={(e) => setFinanceMetric(e.target.value as any)} className={`w-full h-10 px-3 border border-soft-blue rounded-xl ${isRTL ? 'text-right' : ''}`}>
+                    <option value="gross">{t('admin.analytics.revenue_gross')}</option>
+                    <option value="net">{t('admin.analytics.revenue_net')}</option>
                   </select>
                 </div>
               </div>
-              <Button onClick={handleSaveSettings}>حفظ الإعدادات</Button>
+              <Button onClick={handleSaveSettings}>{t('admin.analytics.save_settings_btn')}</Button>
             </Card>
 
             <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
-              <h3 className="font-bold mb-4">تسعير كل مستشار</h3>
+              <h3 className={`font-bold mb-4 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.per_consultant_title')}</h3>
               <div className="space-y-3">
                 {consultants.map((c) => (
-                  <div key={c.uid} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center p-3 border border-soft-blue rounded-xl">
+                  <div key={c.uid} className={`grid grid-cols-1 md:grid-cols-4 gap-3 items-center p-3 border border-soft-blue rounded-xl ${isRTL ? 'text-right' : ''}`}>
                     <div className="font-semibold">{c.name}</div>
-                    <div className="text-sm text-brand-slate">افتراضي: {standardFee} ج.م</div>
+                    <div className="text-sm text-brand-slate">{t('admin.analytics.default_fee', { fee: standardFee })}</div>
                     <input
                       type="number"
                       defaultValue={(c as any).customConsultationFee ?? standardFee}
                       id={`consultant-fee-${c.uid}`}
-                      className="h-10 px-3 border border-soft-blue rounded-xl"
+                      className={`h-10 px-3 border border-soft-blue rounded-xl ${isRTL ? 'text-right' : ''}`}
                     />
                     <Button variant="outline" onClick={() => {
                       const input = document.getElementById(`consultant-fee-${c.uid}`) as HTMLInputElement | null;
                       handleConsultantPriceSave(c.uid, input?.value || '');
-                    }}>حفظ السعر</Button>
+                    }}>{t('admin.analytics.save_price_btn')}</Button>
                   </div>
                 ))}
               </div>
             </Card>
 
             <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
-              <h3 className="font-bold mb-4">ملخص العوائد</h3>
+              <h3 className={`font-bold mb-4 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.revenue_summary_title')}</h3>
               <p className="text-lg font-bold text-blue-700">
-                {financeMetric === 'gross' ? 'إجمالي العوائد' : 'صافي العوائد'} ({selectedFinanceRange}): {financeService.computeRangeTotals(payouts, selectedFinanceRange, financeMetric)} ج.م
+                {t(financeMetric === 'gross' ? 'admin.analytics.gross_revenue_label' : 'admin.analytics.net_revenue_label')} ({t(`admin.analytics.range_${selectedFinanceRange}`)}): {financeService.computeRangeTotals(payouts, selectedFinanceRange, financeMetric)} {t('admin.analytics.currency')}
               </p>
             </Card>
 
             <Card className="p-6 bg-white border-none shadow-sm" hover={false}>
-              <h3 className="font-bold mb-4">دفعات المستشارين - الدورة الحالية</h3>
+              <h3 className={`font-bold mb-4 ${isRTL ? 'text-right' : ''}`}>{t('admin.analytics.payouts_list_title')}</h3>
               <div className="space-y-4">
                 {payouts.map((payout) => (
                   <div key={payout.id} className="p-4 border border-soft-blue rounded-xl space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className={`flex flex-wrap items-center justify-between gap-3 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
                       <div>
                         <p className="font-semibold">{payout.consultantName}</p>
-                        <p className="text-xs text-brand-slate">عدد الاستشارات: {payout.consultationsCount} | الإجمالي: {payout.grossAmount} | الخصومات: {payout.totalDeductions} | الصافي: {payout.netAmount}</p>
+                        <p className="text-xs text-brand-slate">{t('admin.analytics.payout_stats', { count: payout.consultationsCount, gross: payout.grossAmount, deductions: payout.totalDeductions, net: payout.netAmount })}</p>
                       </div>
-                      <Badge variant={payout.status === 'paid' ? 'success' : 'warning'}>{payout.status === 'paid' ? 'تم الدفع' : 'قيد المراجعة'}</Badge>
+                      <Badge variant={payout.status === 'paid' ? 'success' : 'warning'}>{payout.status === 'paid' ? t('admin.analytics.status_paid') : t('admin.analytics.status_pending')}</Badge>
                     </div>
                     <div className="space-y-2">
                       {(payout.settlements || []).map((s: any) => (
-                        <div key={s.consultationId} className="text-xs bg-cloud p-2 rounded-lg">
+                        <div key={s.consultationId} className={`text-xs bg-cloud p-2 rounded-lg ${isRTL ? 'text-right' : ''}`}>
                           #{s.caseNumber} - {s.clientName} - gross: {s.grossAmount} - deduction: {s.deductionAmount} - net: {s.netAmount}
                         </div>
                       ))}
                     </div>
                     {payout.status !== 'paid' && (
-                      <div className="flex flex-col md:flex-row gap-2">
+                      <div className={`flex flex-col md:flex-row gap-2 ${isRTL ? 'md:flex-row-reverse' : ''}`}>
                         <input
                           type="text"
-                          placeholder="مرجع التحويل البنكي"
+                          placeholder={t('admin.analytics.bank_ref_placeholder')}
                           value={payoutReferenceById[payout.id] || ''}
                           onChange={(e) => setPayoutReferenceById((prev) => ({ ...prev, [payout.id]: e.target.value }))}
-                          className="h-10 px-3 border border-soft-blue rounded-xl flex-1"
+                          className={`h-10 px-3 border border-soft-blue rounded-xl flex-1 ${isRTL ? 'text-right' : ''}`}
                         />
-                        <Button onClick={() => handleMarkPaid(payout.id)}>تأكيد السداد الخارجي</Button>
+                        <Button onClick={() => handleMarkPaid(payout.id)}>{t('admin.analytics.confirm_payment_btn')}</Button>
                       </div>
                     )}
                   </div>
@@ -1318,7 +1312,6 @@ export default function AdminDashboard() {
                     QualitySpecialist: qualitySpecialists.find(q => q.uid === r.specialistId)?.displayName || r.specialistId,
                     Status: r.status,
                     Classification: r.classification,
-                    MeetingStatus: r.meetingStatus,
                     Notes: r.notes,
                     CreatedAt: new Date(r.createdAt).toLocaleDateString()
                   }));

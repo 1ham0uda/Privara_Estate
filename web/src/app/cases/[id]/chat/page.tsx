@@ -18,8 +18,6 @@ import {
   Image as ImageIcon,
   X,
   Phone,
-  Calendar,
-  Link as LinkIcon,
   Mic,
   MicOff,
   PhoneCall,
@@ -41,8 +39,6 @@ import { toast, Toaster } from 'react-hot-toast';
 import Image from 'next/image';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { auth } from '@/src/lib/firebase';
-import MeetingsPanel from '@/src/components/MeetingsPanel';
-
 const CALL_TIMEOUT_MS = 45_000;
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -152,9 +148,7 @@ export default function ChatPage() {
   const [callBusy, setCallBusy] = useState(false);
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
   const [isRemoteVideoFullscreen, setIsRemoteVideoFullscreen] = useState(false);
-  const [showMeetings, setShowMeetings] = useState(false);
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [meetingLinkInput, setMeetingLinkInput] = useState('');
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -172,7 +166,7 @@ export default function ChatPage() {
   const pendingCandidatesRef = useRef<CallIceCandidate[]>([]);
   const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const mediaMixRef = useRef<{ audioContext: AudioContext; destination: MediaStreamAudioDestinationNode } | null>(null);
+  const mediaMixRef = useRef<{ audioContext: AudioContext; destination: MediaStreamAudioDestinationNode; remoteSource: MediaStreamAudioSourceNode | null } | null>(null);
   const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const recordingAnimationRef = useRef<number | null>(null);
   const recordingVideoStreamRef = useRef<MediaStream | null>(null);
@@ -387,7 +381,7 @@ export default function ChatPage() {
         await container.requestFullscreen();
       }
     } catch {
-      toast.error(language === 'ar' ? 'تعذر فتح وضع ملء الشاشة.' : 'Unable to enter fullscreen mode.');
+      toast.error(t('chat.fullscreen_error'));
     }
   };
 
@@ -751,58 +745,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleRequestMeeting = async () => {
-    if (!profile || !caseId || !consultation) return;
-    try {
-      await chatService.sendMessage(
-        caseId as string,
-        profile.uid,
-        profile.displayName || profile.email || t(`common.${profile.role}`),
-        profile.role,
-        `📅 ${t('chat.meeting_requested')}: I would like to schedule an online meeting to discuss my case.\n${t('chat.external_meeting_fallback')}`,
-        consultation.clientId,
-        consultation.consultantId,
-        '',
-        undefined,
-        'meeting_request'
-      );
-      toast.success(t('chat.meeting_requested_success'));
-      setShowActions(false);
-    } catch {
-      toast.error(t('chat.meeting_failed'));
-    }
-  };
-
-  const handleProvideMeetingLink = () => {
-    setMeetingLinkInput('');
-    setShowLinkModal(true);
-    setShowActions(false);
-  };
-
-  const handleSubmitMeetingLink = async () => {
-    const link = meetingLinkInput.trim();
-    if (!link || !profile || !caseId || !consultation) return;
-    try {
-      await chatService.sendMessage(
-        caseId as string,
-        profile.uid,
-        profile.displayName || profile.email || t(`common.${profile.role}`),
-        profile.role,
-        `🔗 ${t('chat.meeting_link')}: ${link}\n${t('chat.external_meeting_fallback')}`,
-        consultation.clientId,
-        consultation.consultantId,
-        '',
-        undefined,
-        'meeting_link'
-      );
-      toast.success(t('chat.link_sent_success'));
-      setMeetingLinkInput('');
-      setShowLinkModal(false);
-    } catch {
-      toast.error(t('chat.link_failed'));
-    }
-  };
-
   const flushPendingCandidates = async () => {
     if (!peerConnectionRef.current || pendingCandidatesRef.current.length === 0) return;
     for (const candidate of pendingCandidatesRef.current) {
@@ -831,7 +773,7 @@ export default function ChatPage() {
     const remoteSource = audioContext.createMediaStreamSource(remoteStreamRef.current);
     localSource.connect(destination);
     remoteSource.connect(destination);
-    mediaMixRef.current = { audioContext, destination };
+    mediaMixRef.current = { audioContext, destination, remoteSource };
 
     const visualStream = startCallVisualCapture();
     const composedStream = visualStream
@@ -906,8 +848,17 @@ export default function ChatPage() {
     callService.updateCall(activeCall.id, { recordingStatus: 'recording' }).catch(() => undefined);
   }, [activeCall, consultation, isConsultantRecorder, profile, t]);
 
+  // Keep a ref so ontrack handlers (captured at peer-connection build time) always
+  // call the latest version of maybeStartCallRecording, avoiding stale-closure races
+  // where the captured version still has activeCall.status === 'ringing'.
+  const maybeStartCallRecordingRef = useRef(maybeStartCallRecording);
+  useEffect(() => {
+    maybeStartCallRecordingRef.current = maybeStartCallRecording;
+  }, [maybeStartCallRecording]);
+
   const attachRemoteStream = async (event: RTCTrackEvent) => {
     const incomingStream = event.streams?.[0] || null;
+    const prevStream = remoteStreamRef.current;
 
     if (incomingStream) {
       remoteStreamRef.current = incomingStream;
@@ -918,6 +869,18 @@ export default function ChatPage() {
       if (!remoteStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
         remoteStreamRef.current.addTrack(event.track);
       }
+    }
+
+    // If the recording mix is active and the remote stream object changed, reconnect
+    // the remote audio source so the recording captures audio from the new stream.
+    const mix = mediaMixRef.current;
+    if (mix && remoteStreamRef.current && remoteStreamRef.current !== prevStream) {
+      if (mix.remoteSource) {
+        try { mix.remoteSource.disconnect(); } catch { /* ignore */ }
+      }
+      const newRemoteSource = mix.audioContext.createMediaStreamSource(remoteStreamRef.current);
+      newRemoteSource.connect(mix.destination);
+      mediaMixRef.current = { ...mix, remoteSource: newRemoteSource };
     }
 
     const remoteAudioEl = remoteAudioRef.current;
@@ -980,7 +943,7 @@ export default function ChatPage() {
       }
     }
 
-    maybeStartCallRecording();
+    maybeStartCallRecordingRef.current();
   };
 
   const buildPeerConnection = async (callId: string, side: 'caller' | 'callee', localStream: MediaStream) => {
@@ -1250,8 +1213,11 @@ export default function ChatPage() {
     if (!pc) return;
 
     if (videoEnabled) {
-      // Remove video tracks
-      const senders = pc.getSenders().filter((s) => s.track?.kind === 'video');
+      // Remove video tracks — exclude the screen share track to avoid killing it accidentally
+      const screenShareTrack = screenStreamRef.current?.getVideoTracks()[0];
+      const senders = pc.getSenders().filter(
+        (s) => s.track?.kind === 'video' && s.track !== screenShareTrack
+      );
       senders.forEach((s) => pc.removeTrack(s));
       localStreamRef.current?.getVideoTracks().forEach((t) => {
         t.stop();
@@ -1284,11 +1250,7 @@ export default function ChatPage() {
     const pc = peerConnectionRef.current;
     if (!pc) return;
     if (!canScreenShare) {
-      toast.error(
-        language === 'ar'
-          ? 'مشاركة الشاشة غير مدعومة في هذا المتصفح على الهاتف. استخدم متصفحًا على الكمبيوتر.'
-          : 'Screen sharing is not supported in this mobile browser. Use a desktop browser instead.'
-      );
+      toast.error(t('chat.screenshare_mobile_unsupported'));
       return;
     }
 
@@ -1335,8 +1297,19 @@ export default function ChatPage() {
         }
 
         screenTrack.onended = () => {
-          setScreenSharing(false);
+          const activePc = peerConnectionRef.current;
           screenStreamRef.current = null;
+          if (activePc) {
+            const videoSenders = activePc.getSenders().filter((s) => s.track?.kind === 'video');
+            const camTrack = localStreamRef.current?.getVideoTracks()[0];
+            if (camTrack && videoSenders[0]) {
+              videoSenders[0].replaceTrack(camTrack).catch(() => {});
+            } else {
+              videoSenders.forEach((s) => activePc.removeTrack(s));
+              void renegotiateCallMedia();
+            }
+          }
+          setScreenSharing(false);
         };
 
         setScreenSharing(true);
@@ -1517,17 +1490,6 @@ export default function ChatPage() {
               </button>
             )}
 
-            {(profile?.role === 'client' || profile?.role === 'consultant') && !chatLockedUntilAssignment && (
-              <button
-                type="button"
-                onClick={() => setShowMeetings(true)}
-                title={t('meeting.panel_title')}
-                className="p-2.5 rounded-full text-brand-slate hover:text-ink hover:bg-soft-blue transition-colors"
-              >
-                <Calendar className="w-[18px] h-[18px]" />
-              </button>
-            )}
-
             <div className="relative">
               <button
                 type="button"
@@ -1539,26 +1501,6 @@ export default function ChatPage() {
 
               {showActions && (
                 <div className="absolute top-full mt-1 right-0 w-52 bg-white rounded-2xl shadow-xl border border-soft-blue py-1.5 z-50 overflow-hidden">
-                  {profile?.role === 'client' && (
-                    <button
-                      type="button"
-                      onClick={handleRequestMeeting}
-                      className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
-                    >
-                      <Calendar className="w-4 h-4 text-brand-slate shrink-0" />
-                      {t('chat.request_meeting')}
-                    </button>
-                  )}
-                  {profile?.role === 'consultant' && (
-                    <button
-                      type="button"
-                      onClick={handleProvideMeetingLink}
-                      className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
-                    >
-                      <LinkIcon className="w-4 h-4 text-brand-slate shrink-0" />
-                      {t('meeting.provide_link')}
-                    </button>
-                  )}
                   <Link
                     href={`/${profile?.role}/cases/${caseId}`}
                     className="w-full px-4 py-2.5 text-sm text-left text-brand-slate hover:bg-cloud flex items-center gap-3 transition-colors"
@@ -1926,81 +1868,6 @@ export default function ChatPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <Image src={lightboxImage} alt="Chat image preview" fill className="object-contain" unoptimized sizes="100vw" />
-          </div>
-        </div>
-      )}
-
-      {/* ── Meeting link modal ── */}
-      {showLinkModal && (
-        <div
-          className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center"
-          onClick={() => setShowLinkModal(false)}
-        >
-          <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
-          <div
-            className="relative w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-ink mb-4">{t('meeting.provide_link')}</h3>
-            <input
-              type="url"
-              value={meetingLinkInput}
-              onChange={(e) => setMeetingLinkInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitMeetingLink(); }}
-              placeholder="https://..."
-              autoFocus
-              className="w-full border border-soft-blue rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-brand-slate outline-none focus:border-brand-slate transition-colors mb-4"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowLinkModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-soft-blue text-sm font-medium text-brand-slate hover:bg-soft-blue transition-colors"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitMeetingLink}
-                disabled={!meetingLinkInput.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-ink text-sm font-medium text-white hover:bg-ink/90 disabled:opacity-50 transition-colors"
-              >
-                {t('common.send')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Meetings panel drawer ── */}
-      {showMeetings && consultation && profile && (
-        <div
-          className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center"
-          onClick={() => setShowMeetings(false)}
-        >
-          <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
-          <div
-            className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90dvh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-soft-blue shrink-0">
-              <h3 className="text-base font-semibold text-ink">{t('meeting.panel_title')}</h3>
-              <button
-                type="button"
-                onClick={() => setShowMeetings(false)}
-                className="p-1.5 rounded-full text-brand-slate hover:bg-soft-blue transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              <MeetingsPanel
-                consultation={consultation}
-                currentUserId={profile.uid}
-                currentUserName={profile.displayName || profile.email || ''}
-                currentRole={profile.role as 'client' | 'consultant' | 'admin' | 'quality'}
-              />
-            </div>
           </div>
         </div>
       )}

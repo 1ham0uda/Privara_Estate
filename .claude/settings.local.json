@@ -24,7 +24,21 @@
       "Bash(dir \"d:\\\\projects_H\\\\Privara Estate\\\\web\" /b)",
       "Bash(npx vitest *)",
       "Bash(./node_modules/.bin/vitest run *)",
-      "Bash(gcloud beta *)"
+      "Bash(gcloud beta *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Force | Select-Object Name, @{Name=\"IsDir\";Expression={$_.PSIsContainer}} | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Depth 2 -File | Where-Object {$_.Name -match '\\(tsconfig|package\\\\.json|\\\\.env|\\\\.github\\)'} | Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Recurse -Directory -Depth 2 | Where-Object { $_.FullName -notmatch '\\\\.next|node_modules|\\\\.git' } | Select-Object @{Name=\"Path\";Expression={$_.FullName.Replace\\(\"d:\\\\projects_H\\\\Privara Estate\\\\\", \"\"\\)}} | Sort-Object Path)",
+      "PowerShell(head -200)",
+      "Bash(Remove-Item \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\src\\\\components\\\\MeetingsPanel.tsx\" -Force)",
+      "Bash(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\\\\web\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20)",
+      "Bash(Format-Table FullName)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\\\\web\" -Recurse -Directory | Select-Object -First 20 | ForEach-Object { $_.FullName })",
+      "Bash(grep -rn \"toast\\\\.\\\\\\(error\\\\|success\\\\|info\\\\\\)\\(\\\\`\" \"d:/projects_H/Privara Estate/web/src/app/\" --include=\"*.tsx\")",
+      "Bash(grep -rn \">\\\\s*['\\\\\"\\\\`]\" \"d:/projects_H/Privara Estate/web/src/app/admin/dashboard/page.tsx\" --include=\"*.tsx\")",
+      "Bash(grep -E \"[\\\\'\\\\\"]\\(?:[A-Z]|[a-z]{2,}\\)\")"
     ]
   }
 }

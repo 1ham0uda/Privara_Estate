@@ -36,7 +36,6 @@ import { motion } from 'motion/react';
 
 import { useLanguage } from '@/src/context/LanguageContext';
 import RatingModal from '@/src/components/RatingModal';
-import MeetingsPanel from '@/src/components/MeetingsPanel';
 import { RatingDetails } from '@/src/types';
 
 export default function CaseDetails() {
@@ -263,18 +262,6 @@ export default function CaseDetails() {
                 </div>
               </div>
             </Card>
-
-            {/* Scheduled Meetings */}
-            {consultation.consultantId && (
-              <Card hover={false} className="p-4 sm:p-6">
-                <MeetingsPanel
-                  consultation={consultation}
-                  currentUserId={profile!.uid}
-                  currentUserName={profile!.displayName}
-                  currentRole={profile!.role}
-                />
-              </Card>
-            )}
 
             {/* Rating Section */}
             {consultation.status === 'report_sent' && !consultation.rating && (

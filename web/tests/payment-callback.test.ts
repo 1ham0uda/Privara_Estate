@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
+import type { ConsultationPaymentInfo } from '../src/types';
 
 // ─── Extracted signature logic (mirrors the callback route) ───────────────────
 
@@ -106,7 +107,7 @@ describe('Idempotency guard logic', () => {
   });
 
   it('does not treat initiated as paid', () => {
-    const paymentStatus = 'initiated';
-    expect(paymentStatus === 'paid').toBe(false);
+    const paymentStatus: ConsultationPaymentInfo['status'] = 'initiated';
+    expect(paymentStatus).not.toBe('paid');
   });
 });

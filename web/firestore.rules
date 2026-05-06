@@ -307,26 +307,6 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
-    function isValidMeeting(data) {
-      return hasRequiredFields(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'title', 'scheduledAt', 'durationMinutes', 'status', 'createdAt', 'updatedAt']) &&
-        hasOnlyAllowedFields(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'title', 'scheduledAt', 'durationMinutes', 'status', 'meetingLink', 'notes', 'createdAt', 'updatedAt', 'reminderSentAt']) &&
-        data.caseId is string &&
-        data.clientId is string &&
-        data.consultantId is string &&
-        data.clientName is string &&
-        data.consultantName is string &&
-        data.proposedBy is string &&
-        data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
-        data.scheduledAt is timestamp &&
-        data.durationMinutes is number && data.durationMinutes > 0 && data.durationMinutes <= 240 &&
-        data.status in ['scheduled', 'confirmed', 'cancelled', 'completed'] &&
-        (!('meetingLink' in data) || data.meetingLink == null || data.meetingLink == '' || isValidUrl(data.meetingLink)) &&
-        (!('notes' in data) || data.notes == null || data.notes is string) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp &&
-        (!('reminderSentAt' in data) || data.reminderSentAt == null || data.reminderSentAt is timestamp);
-    }
-
     function canCreateCall() {
       return isValidCall(request.resource.data) &&
         exists(/databases/$(database)/documents/consultations/$(request.resource.data.consultationId)) &&
@@ -616,47 +596,6 @@ service cloud.firestore {
     match /consultantPayouts/{payoutId} {
       allow read: if isAuthenticated() && (isAdmin() || resource.data.consultantId == request.auth.uid);
       allow create, update, delete: if isAdmin();
-    }
-
-    match /meetings/{meetingId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        (exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
-          (
-            consultationDoc(resource.data.caseId).clientId == request.auth.uid ||
-            consultationDoc(resource.data.caseId).consultantId == request.auth.uid ||
-            consultationDoc(resource.data.caseId).qualitySpecialistId == request.auth.uid
-          ))
-      );
-
-      allow create: if isAuthenticated() &&
-        isValidMeeting(request.resource.data) &&
-        exists(/databases/$(database)/documents/consultations/$(request.resource.data.caseId)) &&
-        request.resource.data.clientId == consultationDoc(request.resource.data.caseId).clientId &&
-        request.resource.data.consultantId == consultationDoc(request.resource.data.caseId).consultantId &&
-        request.resource.data.proposedBy == request.auth.uid &&
-        (request.auth.uid == request.resource.data.clientId || request.auth.uid == request.resource.data.consultantId);
-
-      allow update: if isAuthenticated() &&
-        isValidMeeting(request.resource.data) &&
-        areImmutableFieldsUnchanged(['caseId', 'clientId', 'consultantId', 'clientName', 'consultantName', 'proposedBy', 'createdAt']) &&
-        exists(/databases/$(database)/documents/consultations/$(resource.data.caseId)) &&
-        request.resource.data.caseId == resource.data.caseId &&
-        request.resource.data.clientId == resource.data.clientId &&
-        request.resource.data.consultantId == resource.data.consultantId &&
-        (
-          isAdmin() ||
-          (
-            request.auth.uid == resource.data.clientId &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'meetingLink', 'notes', 'scheduledAt', 'durationMinutes', 'updatedAt']) &&
-            request.resource.data.status in ['confirmed', 'cancelled']
-          ) ||
-          (
-            request.auth.uid == resource.data.consultantId &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'meetingLink', 'notes', 'scheduledAt', 'durationMinutes', 'updatedAt']) &&
-            request.resource.data.status in ['confirmed', 'cancelled', 'completed']
-          )
-        );
     }
 
     // discountCodes: admin manages; authenticated users may read active codes for

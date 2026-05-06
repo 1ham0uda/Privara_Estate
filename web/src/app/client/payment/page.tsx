@@ -105,12 +105,12 @@ export default function PaymentPage() {
       if (data.valid) {
         setAppliedDiscount({ code: data.code, percent: data.discountPercent });
         analyticsEvents.discountApplied(data.discountPercent);
-        toast.success(`${data.discountPercent}% discount applied!`);
+        toast.success(t('payment.discount_applied', { percent: data.discountPercent }));
       } else {
-        toast.error(data.error === 'expired' ? 'Code has expired.' : data.error === 'exhausted' ? 'Code limit reached.' : 'Invalid discount code.');
+        toast.error(data.error === 'expired' ? t('payment.discount_expired') : data.error === 'exhausted' ? t('payment.discount_exhausted') : t('payment.discount_invalid'));
       }
     } catch {
-      toast.error('Could not validate code. Please try again.');
+      toast.error(t('payment.discount_validate_error'));
     } finally {
       setValidatingDiscount(false);
     }

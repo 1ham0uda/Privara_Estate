@@ -312,7 +312,6 @@ export default function AdminCaseDetails() {
                           <Badge variant={report.classification === 'critical' ? 'error' : 'success'}>
                             {report.classification === 'critical' ? t('dashboard.critical') : t('dashboard.non_critical')}
                           </Badge>
-                          <Badge variant="info">{t('dashboard.meeting_recorded')}: {report.meetingStatus.replace('-', ' ')}</Badge>
                         </div>
                         <span className="text-xs text-brand-slate">{formatDate(report.createdAt, language)}</span>
                       </div>

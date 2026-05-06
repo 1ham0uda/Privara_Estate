@@ -184,9 +184,8 @@ const TWENTY_FOUR_MONTHS_MS = 24 * 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Daily scheduled job that deletes Storage objects past their retention window:
- *   - calls/**   (call recordings)     → 12 months
- *   - meetings/** (meeting recordings) → 12 months
- *   - chat/**    (chat media/voice)    → 24 months
+ *   - calls/**  (call recordings)   → 12 months
+ *   - chat/**   (chat media/voice)  → 24 months
  *
  * Run: every day at 03:00 UTC.
  */
@@ -198,7 +197,6 @@ export const scheduledStorageCleanup = onSchedule(
 
     const prefixWindows: Array<{ prefix: string; maxAgeMs: number }> = [
       { prefix: 'calls/', maxAgeMs: TWELVE_MONTHS_MS },
-      { prefix: 'meetings/', maxAgeMs: TWELVE_MONTHS_MS },
       { prefix: 'chat/', maxAgeMs: TWENTY_FOUR_MONTHS_MS },
     ];
 

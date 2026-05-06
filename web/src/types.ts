@@ -36,7 +36,6 @@ export interface NotificationPreferences {
     consultant_reassigned: boolean;
     support_ticket_replied: boolean;
     audit_report_submitted: boolean;
-    meeting_reminder: boolean;
     rating_reminder: boolean;
   };
 }
@@ -198,28 +197,6 @@ export interface ComparableProperty {
   notes: string;
 }
 
-// ─── Scheduled meeting ────────────────────────────────────────────────────────
-export type MeetingStatus = 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
-
-export interface ScheduledMeeting {
-  id: string;
-  caseId: string;
-  clientId: string;
-  consultantId: string;
-  clientName: string;
-  consultantName: string;
-  proposedBy: string;
-  title: string;
-  scheduledAt: any;
-  durationMinutes: number;
-  status: MeetingStatus;
-  meetingLink?: string;
-  notes?: string;
-  createdAt: any;
-  updatedAt: any;
-  reminderSentAt?: any;
-}
-
 export interface ConsultationCase {
   id: string;
   clientId: string;
@@ -238,7 +215,6 @@ export interface ConsultationCase {
   completedAt?: any;
   reportUrl?: string;
   structuredReport?: StructuredReport;
-  meetingRecordingUrl?: string;
   callRecordings?: string[];
   reassignmentRequestStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   consultantReassignmentRequest?: { reason: string; requestedAt: any };
@@ -308,7 +284,7 @@ export interface Message {
   fileName?: string;
   fileType?: string;
   fileSize?: number;
-  type: 'text' | 'image' | 'audio' | 'file' | 'meeting_request' | 'meeting_link' | 'call_log';
+  type: 'text' | 'image' | 'audio' | 'file' | 'call_log';
   createdAt: any;
 }
 
@@ -320,8 +296,6 @@ export type NotificationEventType =
   | 'consultant_reassigned'
   | 'audit_report_submitted'
   | 'report_uploaded'
-  | 'meeting_scheduled'
-  | 'meeting_reminder'
   | 'rating_reminder'
   | 'support_ticket_created'
   | 'support_ticket_replied'
@@ -362,7 +336,6 @@ export interface QualityAuditReport {
   specialistName: string;
   status: 'pending' | 'completed';
   classification: 'critical' | 'non-critical';
-  meetingStatus: 'recorded' | 'not-recorded' | 'failed';
   notes: string;
   criteria?: AuditCriterion[];
   totalScore?: number;
