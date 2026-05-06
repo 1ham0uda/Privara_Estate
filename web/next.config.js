@@ -30,7 +30,8 @@ const securityHeaders = [
       // Firebase Auth, Firestore, Storage, Functions
       "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.geidea.net https://*.geidea.net https://eu.i.posthog.com https://*.posthog.com https://www.google-analytics.com https://region1.google-analytics.com",
       // Next.js inline scripts + Firebase SDK bootstrap + GA4 + PostHog
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.googletagmanager.com https://*.posthog.com",
+      // gstatic.com is required for the Firebase messaging service worker's importScripts()
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.googletagmanager.com https://*.posthog.com https://www.gstatic.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://images.unsplash.com https://picsum.photos",

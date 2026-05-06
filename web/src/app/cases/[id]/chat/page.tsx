@@ -26,8 +26,6 @@ import {
   Paperclip,
   FileText,
   Download,
-  Video,
-  VideoOff,
   Monitor,
   MonitorOff,
   Maximize,
@@ -148,6 +146,7 @@ export default function ChatPage() {
   const [callBusy, setCallBusy] = useState(false);
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
   const [isRemoteVideoFullscreen, setIsRemoteVideoFullscreen] = useState(false);
+  const [remoteHasVideo, setRemoteHasVideo] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -508,6 +507,7 @@ export default function ChatPage() {
     setIsMuted(false);
     setVideoEnabled(false);
     setScreenSharing(false);
+    setRemoteHasVideo(false);
     setCallElapsed(0);
     resetRemoteCandidates();
   }, [stopRemotePlayback]);
@@ -892,6 +892,14 @@ export default function ChatPage() {
 
     // Attach video tracks to both visible and fallback video elements.
     if (remoteStream.getVideoTracks().length > 0) {
+      setRemoteHasVideo(true);
+      remoteStream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          if (!remoteStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live')) {
+            setRemoteHasVideo(false);
+          }
+        };
+      });
       [remoteVideoRef.current, remoteVideoFallbackRef.current].forEach((el) => {
         if (!el) return;
         el.srcObject = remoteStream;
@@ -1029,6 +1037,7 @@ export default function ChatPage() {
     if (side === 'caller') {
       peerConnection.onnegotiationneeded = async () => {
         if (!peerConnection.currentRemoteDescription) return;
+        if (peerConnection.signalingState !== 'stable') return;
         try {
           const offer = await peerConnection.createOffer({ iceRestart: true });
           await peerConnection.setLocalDescription(offer);
@@ -1285,6 +1294,10 @@ export default function ChatPage() {
           await videoSenders[0].replaceTrack(screenTrack).catch(() => {});
         } else {
           pc.addTrack(screenTrack, screenStream);
+          // replaceTrack doesn't need renegotiation, but addTrack does.
+          // The caller's onnegotiationneeded fires automatically; the callee has no handler,
+          // so renegotiateCallMedia is called explicitly for both sides.
+          await renegotiateCallMedia();
         }
 
         if (localVideoRef.current) {
@@ -1323,13 +1336,15 @@ export default function ChatPage() {
   useEffect(() => {
     if (!activeCall || !profile || !canOpenCall) return;
 
-    // Caller: apply remote answer (initial connect + ICE-restart renegotiation)
+    // Caller: apply remote answer (initial connect + ICE-restart renegotiation).
+    // Guard against applying our own answer when we acted as answerer during callee-initiated renegotiation.
     if (
       activeCall.answer?.sdp &&
       isCallInitiator &&
       peerConnectionRef.current &&
       peerConnectionRef.current.signalingState !== 'closed' &&
-      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current
+      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current &&
+      activeCall.answer.sdp !== peerConnectionRef.current.localDescription?.sdp
     ) {
       lastAppliedAnswerSdpRef.current = activeCall.answer.sdp;
       peerConnectionRef.current
@@ -1338,7 +1353,24 @@ export default function ChatPage() {
         .catch(() => undefined);
     }
 
-    // Either side: re-apply remote offer updates (initial offer, ICE restart, or media renegotiation)
+    // Callee: apply remote answer when the callee initiated renegotiation (e.g. screen share).
+    // The callee is in have-local-offer state after sending its own offer; the caller responded with an answer.
+    if (
+      activeCall.answer?.sdp &&
+      !isCallInitiator &&
+      peerConnectionRef.current?.signalingState === 'have-local-offer' &&
+      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current &&
+      activeCall.answer.sdp !== peerConnectionRef.current.localDescription?.sdp
+    ) {
+      lastAppliedAnswerSdpRef.current = activeCall.answer.sdp;
+      peerConnectionRef.current
+        .setRemoteDescription(new RTCSessionDescription(activeCall.answer as RTCSessionDescriptionInit))
+        .then(() => flushPendingCandidates())
+        .catch(() => undefined);
+    }
+
+    // Either side: re-apply remote offer updates (initial offer, ICE restart, or callee-initiated renegotiation).
+    // Uses updateCall directly to avoid resetting acceptedAt/status during mid-call renegotiation.
     if (
       activeCall.offer?.sdp &&
       peerConnectionRef.current &&
@@ -1349,9 +1381,14 @@ export default function ChatPage() {
     ) {
       const pc = peerConnectionRef.current;
       lastAppliedOfferSdpRef.current = activeCall.offer.sdp;
+      const isRenegotiation = activeCall.status === 'active';
       pc.setRemoteDescription(new RTCSessionDescription(activeCall.offer as RTCSessionDescriptionInit))
         .then(() => pc.createAnswer())
-        .then((answer) => pc.setLocalDescription(answer).then(() => callService.saveAnswer(activeCall.id, answer)))
+        .then((answer) => pc.setLocalDescription(answer).then(() =>
+          isRenegotiation
+            ? callService.updateCall(activeCall.id, { answer: { type: 'answer', sdp: answer.sdp || '' } })
+            : callService.saveAnswer(activeCall.id, answer)
+        ))
         .catch(() => undefined);
     }
 
@@ -1944,7 +1981,7 @@ export default function ChatPage() {
               </p>
 
               {/* Remote video */}
-              {(videoEnabled || screenSharing) && activeCall.status === 'active' && (
+              {(videoEnabled || screenSharing || remoteHasVideo) && activeCall.status === 'active' && (
                 <div
                   ref={remoteVideoContainerRef}
                   className="mt-4 w-full relative rounded-xl overflow-hidden bg-black/40"
@@ -2050,7 +2087,7 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {/* Active call: Mute + Video + ScreenShare + End */}
+              {/* Active call: Mute + ScreenShare + End */}
               {activeCall.status === 'active' && (
                 <>
                   <div className="flex flex-col items-center gap-2.5">
@@ -2066,21 +2103,6 @@ export default function ChatPage() {
                     </button>
                     <span className="text-[11px] font-medium text-white/40">
                       {isMuted ? t('call.unmute') : t('call.mute')}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={toggleVideo}
-                      className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all
-                        ${videoEnabled
-                          ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
-                          : 'bg-white/12 hover:bg-white/20 text-white'}`}
-                    >
-                      {videoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-                    </button>
-                    <span className="text-[11px] font-medium text-white/40">
-                      {videoEnabled ? t('call.video_off') : t('call.video_on')}
                     </span>
                   </div>
                   <div className="flex flex-col items-center gap-2.5">

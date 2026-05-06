@@ -41,7 +41,9 @@
       "Bash(grep -E \"[\\\\'\\\\\"]\\(?:[A-Z]|[a-z]{2,}\\)\")",
       "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -File | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\icons\" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } | Sort-Object)",
-      "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -Recurse -File | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\\", \"\"\\) })"
+      "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -Recurse -File | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\\", \"\"\\) })",
+      "Bash(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Filter \"next.config*\" -Recurse)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

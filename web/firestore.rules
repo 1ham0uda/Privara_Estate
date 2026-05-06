@@ -358,6 +358,7 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/calls/$(callId)) && (
         callDoc(callId).clientId == request.auth.uid ||
         callDoc(callId).consultantId == request.auth.uid ||
+        isConsultationParticipant(callDoc(callId).consultationId) ||
         isAdmin()
       );
     }
