@@ -47,12 +47,12 @@ export default function ConsultantCaseDetails() {
   const [sendingReassign, setSendingReassign] = useState(false);
 
   useEffect(() => {
-    if (caseId) {
+    if (caseId && profile) {
       consultationService.getConsultation(caseId as string).then(async (data) => {
         setConsultation(data);
         if (data?.tags) setSelectedTags(data.tags);
         setInternalNotes(data?.internalNotes || '');
-        
+
         // Use data from consultation object for client profile
         if (data?.clientId) {
           setClient({
@@ -66,7 +66,7 @@ export default function ConsultantCaseDetails() {
         }
       });
     }
-  }, [caseId]);
+  }, [caseId, profile]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

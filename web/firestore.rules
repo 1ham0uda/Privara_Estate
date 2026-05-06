@@ -589,7 +589,7 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      allow read: if true;  // public config: fees, maintenance flag — no sensitive data
       allow write: if isAdmin();
     }
 

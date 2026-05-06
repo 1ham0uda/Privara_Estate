@@ -15,7 +15,7 @@ export default function MaintenanceGate({ children }: { children: React.ReactNod
   useEffect(() => {
     settingsService.getSettings()
       .then(s => setMaintenance(s?.maintenanceMode ?? false))
-      .catch(() => {});
+      .catch(() => setMaintenance(false));
   }, []);
 
   if (maintenance && profile?.role !== 'admin') {

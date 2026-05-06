@@ -1,11 +1,21 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-// Config is injected at build-time by next.config.js via __FIREBASE_CONFIG__,
-// or falls back to reading self.__FIREBASE_CONFIG__ injected by the web app.
-const config = self.__FIREBASE_CONFIG__ || {};
+// The Firebase SDK registers this service worker with ?config={encodedJSON} in
+// the URL.  self.__FIREBASE_CONFIG__ is only available in the main window scope,
+// not in the SW scope, so we read from the URL query param first.
+function getFirebaseConfig() {
+  try {
+    const params = new URLSearchParams(self.location.search);
+    const encoded = params.get('config');
+    if (encoded) return JSON.parse(decodeURIComponent(encoded));
+  } catch (_) {}
+  return self.__FIREBASE_CONFIG__ || null;
+}
 
-if (config.apiKey) {
+const config = getFirebaseConfig();
+
+if (config && config.apiKey) {
   firebase.initializeApp(config);
   const messaging = firebase.messaging();
 
@@ -15,8 +25,8 @@ if (config.apiKey) {
 
     self.registration.showNotification(title || 'Privara Estate', {
       body: body || '',
-      icon: icon || '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: icon || '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
       data: { link },
       requireInteraction: false,
     });

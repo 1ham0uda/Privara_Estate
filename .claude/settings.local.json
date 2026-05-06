@@ -38,7 +38,10 @@
       "PowerShell(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\\\\web\" -Recurse -Directory | Select-Object -First 20 | ForEach-Object { $_.FullName })",
       "Bash(grep -rn \"toast\\\\.\\\\\\(error\\\\|success\\\\|info\\\\\\)\\(\\\\`\" \"d:/projects_H/Privara Estate/web/src/app/\" --include=\"*.tsx\")",
       "Bash(grep -rn \">\\\\s*['\\\\\"\\\\`]\" \"d:/projects_H/Privara Estate/web/src/app/admin/dashboard/page.tsx\" --include=\"*.tsx\")",
-      "Bash(grep -E \"[\\\\'\\\\\"]\\(?:[A-Z]|[a-z]{2,}\\)\")"
+      "Bash(grep -E \"[\\\\'\\\\\"]\\(?:[A-Z]|[a-z]{2,}\\)\")",
+      "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -File | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\icons\" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } | Sort-Object)",
+      "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -Recurse -File | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\\", \"\"\\) })"
     ]
   }
 }
