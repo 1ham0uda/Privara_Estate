@@ -43,7 +43,9 @@
       "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\icons\" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } | Sort-Object)",
       "PowerShell(Get-ChildItem \"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\" -Recurse -File | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"d:\\\\projects_H\\\\Privara Estate\\\\web\\\\public\\\\\", \"\"\\) })",
       "Bash(Get-ChildItem -Path \"d:\\\\projects_H\\\\Privara Estate\" -Filter \"next.config*\" -Recurse)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(cd \"d:\\\\projects_H\\\\Privara Estate\\\\web\"; npx tsc --noEmit 2>&1; echo \"EXIT:$LASTEXITCODE\")",
+      "PowerShell(cd \"d:\\\\projects_H\\\\Privara Estate\\\\web\"; npx tsc --noEmit --strict 2>&1 | Select-Object -First 40; echo \"EXIT:$LASTEXITCODE\")"
     ]
   }
 }

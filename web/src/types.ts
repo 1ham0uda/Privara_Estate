@@ -237,6 +237,13 @@ export interface CallSignalDescription {
   sdp: string;
 }
 
+/** Written by callee to ask caller to create a fresh offer (avoids glare). */
+export interface CallRenegotiationRequest {
+  requestedBy: 'callee';
+  reason: string;
+  ts: any;
+}
+
 export interface CallSession {
   id: string;
   consultationId: string;
@@ -259,6 +266,8 @@ export interface CallSession {
   recordingUrl?: string | null;
   offer?: CallSignalDescription | null;
   answer?: CallSignalDescription | null;
+  /** Callee sets this to trigger caller-side renegotiation without creating its own offer. */
+  renegotiationRequest?: CallRenegotiationRequest | null;
 }
 
 export interface CallIceCandidate {

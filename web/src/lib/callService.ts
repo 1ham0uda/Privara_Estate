@@ -13,10 +13,11 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
-import { CallIceCandidate, CallSession, ConsultationCase, UserRole } from '../types';
+import { CallIceCandidate, CallSession, ConsultationCase, UserRole, CallRenegotiationRequest } from '../types';
 
 function getCurrentUserErrorContext(error: unknown) {
   return {
@@ -200,6 +201,42 @@ export const callService = {
         logCallError('subscribeToIceCandidates', error);
       }
     );
+  },
+
+  /**
+   * Callee calls this to ask the caller to create a fresh offer.
+   * Avoids glare — only the caller ever creates offers.
+   */
+  async requestRenegotiation(callId: string, reason: string): Promise<void> {
+    try {
+      const request: Omit<CallRenegotiationRequest, 'ts'> & { ts: any } = {
+        requestedBy: 'callee',
+        reason,
+        ts: serverTimestamp(),
+      };
+      await updateDoc(doc(db, 'calls', callId), {
+        renegotiationRequest: request,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      logCallError('requestRenegotiation', error);
+    }
+  },
+
+  /**
+   * Caller calls this atomically: saves new offer AND clears the renegotiation request.
+   */
+  async saveOfferAndClearRenegotiation(callId: string, description: RTCSessionDescriptionInit): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'calls', callId), {
+        offer: { type: 'offer', sdp: description.sdp || '' },
+        renegotiationRequest: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      logCallError('saveOfferAndClearRenegotiation', error);
+      throw error;
+    }
   },
 
   async uploadRecording(consultationId: string, callId: string, file: File, durationSec: number) {

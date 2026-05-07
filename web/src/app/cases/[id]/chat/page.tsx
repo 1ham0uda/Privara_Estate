@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { useRoleGuard } from '@/src/hooks/useRoleGuard';
 import { chatService, consultationService, userService, consultantService } from '@/src/lib/db';
 import { callService } from '@/src/lib/callService';
-import { CallIceCandidate, CallSession, ConsultationCase, Message, UserProfile } from '@/src/types';
+import { CallSession, ConsultationCase, Message, UserProfile } from '@/src/types';
+import { useWebRTCCall } from '@/src/hooks/useWebRTCCall';
 import { Button } from '@/src/components/UI';
 import {
   Send,
@@ -36,17 +37,6 @@ import Navbar from '@/src/components/Navbar';
 import { toast, Toaster } from 'react-hot-toast';
 import Image from 'next/image';
 import { useLanguage } from '@/src/context/LanguageContext';
-import { auth } from '@/src/lib/firebase';
-const CALL_TIMEOUT_MS = 45_000;
-const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-];
-
-const DEFAULT_RTC_CONFIGURATION: RTCConfiguration = {
-  iceServers: DEFAULT_ICE_SERVERS,
-  iceCandidatePoolSize: 10,
-};
-
 const TERMINAL_CALL_STATUSES = new Set(['declined', 'ended', 'missed']);
 
 const formatMediaDuration = (seconds?: number | null) => {
@@ -137,35 +127,8 @@ export default function ChatPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileAttachRef = useRef<HTMLInputElement>(null);
 
-  const [activeCall, setActiveCall] = useState<CallSession | null>(null);
-  const [showCallPanel, setShowCallPanel] = useState(false);
-  const [callElapsed, setCallElapsed] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [videoEnabled, setVideoEnabled] = useState(false);
-  const [screenSharing, setScreenSharing] = useState(false);
-  const [callBusy, setCallBusy] = useState(false);
+  // ── Recording state (managed here; streams/mix owned by WebRTC hook) ──────
   const [callRecordingProcessing, setCallRecordingProcessing] = useState(false);
-  const [isRemoteVideoFullscreen, setIsRemoteVideoFullscreen] = useState(false);
-  const [remoteHasVideo, setRemoteHasVideo] = useState(false);
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement>(null);
-  const localAudioRef = useRef<HTMLAudioElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoFallbackRef = useRef<HTMLVideoElement>(null);
-  const localVideoFallbackRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoContainerRef = useRef<HTMLDivElement>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const remoteCandidateIdsRef = useRef<Set<string>>(new Set());
-  const pendingCandidatesRef = useRef<CallIceCandidate[]>([]);
-  const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const mediaMixRef = useRef<{ audioContext: AudioContext; destination: MediaStreamAudioDestinationNode; remoteSource: MediaStreamAudioSourceNode | null } | null>(null);
   const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const recordingAnimationRef = useRef<number | null>(null);
   const recordingVideoStreamRef = useRef<MediaStream | null>(null);
@@ -173,30 +136,31 @@ export default function ChatPage() {
   const callRecordingChunksRef = useRef<Blob[]>([]);
   const recordingMetaRef = useRef<{ callId: string; consultationId: string; startedAtMs: number } | null>(null);
   const recorderStoppingRef = useRef(false);
-  const finalizedCallStatusesRef = useRef<Map<string, string>>(new Map());
-  // Track which call ID's candidate state has been initialised (avoid clearing on every re-render)
-  const lastResetCallIdRef = useRef<string | null>(null);
-  // Track which offer/answer SDP has been applied so ICE-restart renegotiations are detected
-  const lastAppliedOfferSdpRef = useRef<string | null>(null);
-  const lastAppliedAnswerSdpRef = useRef<string | null>(null);
-  const remotePlaybackContextRef = useRef<AudioContext | null>(null);
-  const remotePlaybackSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const rtcConfigRef = useRef<RTCConfiguration>(DEFAULT_RTC_CONFIGURATION);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { t, isRTL, language } = useLanguage();
   const isQuality = profile?.role === 'quality';
   const canOpenCall = profile?.role === 'client' || profile?.role === 'consultant';
   const isClientOrConsultant = profile?.role === 'client' || profile?.role === 'consultant';
   const [otherUser, setOtherUser] = useState<UserProfile | null>(null);
-  const canScreenShare =
-    typeof navigator !== 'undefined' &&
-    typeof navigator.mediaDevices !== 'undefined' &&
-    typeof (navigator.mediaDevices as MediaDevices & { getDisplayMedia?: unknown }).getDisplayMedia === 'function';
-
   const isConsultantRecorder = Boolean(profile && consultation?.consultantId && profile.uid === consultation.consultantId);
-  const isCallInitiator = Boolean(activeCall && profile && activeCall.initiatedBy === profile.uid);
-  const isIncomingCall = Boolean(activeCall && profile && activeCall.status === 'ringing' && activeCall.initiatedBy !== profile.uid);
-  const isLiveCall = activeCall?.status === 'active';
+
+  // ── WebRTC hook (depends on derived values above) ──────────────────────────
+  const {
+    activeCall, showCallPanel, setShowCallPanel, callElapsed,
+    isMuted, videoEnabled, screenSharing, callBusy, remoteHasVideo,
+    isIncomingCall, isLiveCall, isCallInitiator,
+    canScreenShare, isRemoteVideoFullscreen,
+    remoteAudioRef, localAudioRef,
+    remoteVideoRef, localVideoRef,
+    remoteVideoFallbackRef, localVideoFallbackRef,
+    remoteVideoContainerRef,
+    localStreamRef, remoteStreamRef, mediaMixRef,
+    onRemoteTrackAttachedRef,
+    handleStartCall, handleAcceptCall, handleDeclineCall, handleEndCall,
+    toggleMute, toggleVideo, toggleScreenShare, toggleRemoteVideoFullscreen,
+  } = useWebRTCCall({ profile, consultation, caseId: caseId as string, canOpenCall, isConsultantRecorder, t });
 
   useEffect(() => {
     if (!consultation || !profile) return;
@@ -236,17 +200,6 @@ export default function ChatPage() {
     }
   }, [consultation, profile]);
 
-  useEffect(() => {
-    if (!profile) return;
-    auth.currentUser?.getIdToken().then(token =>
-      fetch('/api/ice-servers', { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data?.iceServers) rtcConfigRef.current = { iceServers: data.iceServers, iceCandidatePoolSize: 10 };
-        })
-        .catch(() => {})
-    );
-  }, [profile]);
 
   const getOtherUserName = () => {
     if (otherUser?.displayName) return otherUser.displayName;
@@ -265,46 +218,12 @@ export default function ChatPage() {
     }
   }, [caseId, profile]);
 
-  useEffect(() => {
-    if (!caseId || !profile || !canOpenCall) return;
-    const unsubscribeCall = callService.subscribeToLatestCall(caseId as string, (call) => {
-      setActiveCall(call);
-      setCallBusy(Boolean(call && !TERMINAL_CALL_STATUSES.has(call.status)));
-      if (call && !TERMINAL_CALL_STATUSES.has(call.status)) {
-        setShowCallPanel(true);
-      }
-      if (!call) {
-        setCallBusy(false);
-      }
-    });
-
-    return () => unsubscribeCall();
-  }, [caseId, profile, canOpenCall]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
-
-  const resetRemoteCandidates = () => {
-    remoteCandidateIdsRef.current = new Set();
-    pendingCandidatesRef.current = [];
-  };
-
-  const clearCallTimeout = () => {
-    if (callTimeoutRef.current) {
-      clearTimeout(callTimeoutRef.current);
-      callTimeoutRef.current = null;
-    }
-  };
-
-  const clearCallTimer = () => {
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
-  };
 
   const stopCallVisualCapture = () => {
     if (recordingAnimationRef.current) {
@@ -367,23 +286,6 @@ export default function ChatPage() {
     return stream;
   };
 
-  const toggleRemoteVideoFullscreen = async () => {
-    const container = remoteVideoContainerRef.current;
-    if (!container) return;
-    try {
-      if (document.fullscreenElement === container) {
-        await document.exitFullscreen();
-      } else if (document.fullscreenElement) {
-        await document.exitFullscreen();
-        await container.requestFullscreen();
-      } else {
-        await container.requestFullscreen();
-      }
-    } catch {
-      toast.error(t('chat.fullscreen_error'));
-    }
-  };
-
   const stopVoiceNoteRecordingTimer = () => {
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -401,132 +303,19 @@ export default function ChatPage() {
     });
   }, []);
 
-  const ensureRemotePlaybackContext = useCallback(async () => {
-    try {
-      if (!remotePlaybackContextRef.current) {
-        remotePlaybackContextRef.current = new AudioContext();
-      }
-      if (remotePlaybackContextRef.current.state === 'suspended') {
-        await remotePlaybackContextRef.current.resume();
-      }
-      return remotePlaybackContextRef.current;
-    } catch (error) {
-      console.error('[call] Failed to initialize remote playback context', error);
-      return null;
-    }
-  }, []);
-
-  const stopRemotePlayback = useCallback(() => {
-    if (remotePlaybackSourceRef.current) {
-      try {
-        remotePlaybackSourceRef.current.disconnect();
-      } catch {
-        // ignore disconnect failures
-      }
-      remotePlaybackSourceRef.current = null;
-    }
-
-    if (remotePlaybackContextRef.current) {
-      remotePlaybackContextRef.current.close().catch(() => undefined);
-      remotePlaybackContextRef.current = null;
-    }
-  }, []);
-
-  const cleanupCallMedia = useCallback(({ preservePanel = false }: { preservePanel?: boolean } = {}) => {
-    clearCallTimeout();
-    clearCallTimer();
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.ontrack = null;
-      peerConnectionRef.current.onicecandidate = null;
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-
-    if (callRecorderRef.current && callRecorderRef.current.state !== 'inactive' && !recorderStoppingRef.current) {
-      recorderStoppingRef.current = true;
-      callRecorderRef.current.stop();
-    }
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    if (remoteStreamRef.current) {
-      remoteStreamRef.current.getTracks().forEach(track => track.stop());
-      remoteStreamRef.current = null;
-    }
-
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.pause();
-      remoteAudioRef.current.srcObject = null;
-      remoteAudioRef.current.onloadedmetadata = null;
-    }
-
-    if (localAudioRef.current) {
-      localAudioRef.current.pause();
-      localAudioRef.current.srcObject = null;
-    }
-
-    if (mediaMixRef.current) {
-      mediaMixRef.current.audioContext.close().catch(() => undefined);
-      mediaMixRef.current = null;
-    }
-
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
-
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.pause();
-      remoteVideoRef.current.srcObject = null;
-    }
-    if (remoteVideoFallbackRef.current) {
-      remoteVideoFallbackRef.current.pause();
-      remoteVideoFallbackRef.current.srcObject = null;
-    }
-
-    if (localVideoRef.current) {
-      localVideoRef.current.pause();
-      localVideoRef.current.srcObject = null;
-    }
-    if (localVideoFallbackRef.current) {
-      localVideoFallbackRef.current.pause();
-      localVideoFallbackRef.current.srcObject = null;
-    }
-
-    stopRemotePlayback();
-    stopCallVisualCapture();
-
-    if (!preservePanel) {
-      setShowCallPanel(false);
-    }
-
-    setIsMuted(false);
-    setVideoEnabled(false);
-    setScreenSharing(false);
-    setRemoteHasVideo(false);
-    setCallElapsed(0);
-    resetRemoteCandidates();
-  }, [stopRemotePlayback]);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      setIsRemoteVideoFullscreen(document.fullscreenElement === remoteVideoContainerRef.current);
-    };
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, []);
-
+  // Stop recording canvas capture on unmount
   useEffect(() => {
     return () => {
-      cleanupCallMedia();
+      stopCallVisualCapture();
       stopVoiceNoteRecordingTimer();
       discardPendingVoiceNote();
+      if (callRecorderRef.current && callRecorderRef.current.state !== 'inactive' && !recorderStoppingRef.current) {
+        recorderStoppingRef.current = true;
+        callRecorderRef.current.stop();
+      }
     };
-  }, [cleanupCallMedia, discardPendingVoiceNote]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const ALLOWED_FILE_TYPES = [
     'application/pdf',
@@ -745,22 +534,6 @@ export default function ChatPage() {
     }
   };
 
-  const flushPendingCandidates = async () => {
-    if (!peerConnectionRef.current || pendingCandidatesRef.current.length === 0) return;
-    for (const candidate of pendingCandidatesRef.current) {
-      try {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate({
-          candidate: candidate.candidate,
-          sdpMid: candidate.sdpMid,
-          sdpMLineIndex: candidate.sdpMLineIndex,
-        }));
-      } catch {
-        // Ignore malformed or duplicate candidates.
-      }
-    }
-    pendingCandidatesRef.current = [];
-  };
-
   const maybeStartCallRecording = useCallback(() => {
     if (!activeCall || activeCall.status !== 'active' || !isConsultantRecorder) return;
     if (!localStreamRef.current || !remoteStreamRef.current) return;
@@ -856,237 +629,6 @@ export default function ChatPage() {
     maybeStartCallRecordingRef.current = maybeStartCallRecording;
   }, [maybeStartCallRecording]);
 
-  const attachRemoteStream = async (event: RTCTrackEvent) => {
-    const incomingStream = event.streams?.[0] || null;
-    const prevStream = remoteStreamRef.current;
-
-    if (incomingStream) {
-      remoteStreamRef.current = incomingStream;
-    } else {
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
-      if (!remoteStreamRef.current.getTracks().some((existing) => existing.id === event.track.id)) {
-        remoteStreamRef.current.addTrack(event.track);
-      }
-    }
-
-    // If the recording mix is active and the remote stream object changed, reconnect
-    // the remote audio source so the recording captures audio from the new stream.
-    const mix = mediaMixRef.current;
-    if (mix && remoteStreamRef.current && remoteStreamRef.current !== prevStream) {
-      if (mix.remoteSource) {
-        try { mix.remoteSource.disconnect(); } catch { /* ignore */ }
-      }
-      const newRemoteSource = mix.audioContext.createMediaStreamSource(remoteStreamRef.current);
-      newRemoteSource.connect(mix.destination);
-      mediaMixRef.current = { ...mix, remoteSource: newRemoteSource };
-    }
-
-    const remoteAudioEl = remoteAudioRef.current;
-    const remoteStream = remoteStreamRef.current;
-
-    if (!remoteStream) {
-      return;
-    }
-
-    // Attach video tracks to both visible and fallback video elements.
-    if (remoteStream.getVideoTracks().length > 0) {
-      setRemoteHasVideo(true);
-      remoteStream.getVideoTracks().forEach((track) => {
-        track.onended = () => {
-          if (!remoteStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live')) {
-            setRemoteHasVideo(false);
-          }
-        };
-      });
-      [remoteVideoRef.current, remoteVideoFallbackRef.current].forEach((el) => {
-        if (!el) return;
-        el.srcObject = remoteStream;
-        el.play().catch(() => {});
-      });
-    }
-
-    try {
-      const playbackContext = await ensureRemotePlaybackContext();
-      if (playbackContext) {
-        if (remotePlaybackSourceRef.current) {
-          try {
-            remotePlaybackSourceRef.current.disconnect();
-          } catch {
-            // ignore disconnect failures
-          }
-          remotePlaybackSourceRef.current = null;
-        }
-
-        const source = playbackContext.createMediaStreamSource(remoteStream);
-        source.connect(playbackContext.destination);
-        remotePlaybackSourceRef.current = source;
-      }
-    } catch (error) {
-      console.error('[call] Remote playback setup failed', error);
-    }
-
-    if (remoteAudioEl) {
-      remoteAudioEl.autoplay = true;
-      remoteAudioEl.muted = false;
-      remoteAudioEl.volume = 1;
-      remoteAudioEl.srcObject = remoteStream;
-
-      const playRemoteAudio = async () => {
-        try {
-          await remoteAudioEl.play();
-        } catch (error) {
-          console.error('[call] Remote audio playback failed', error);
-          toast.error(t('call.playback_failed'));
-        }
-      };
-
-      if (remoteAudioEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        await playRemoteAudio();
-      } else {
-        remoteAudioEl.onloadedmetadata = () => {
-          void playRemoteAudio();
-        };
-      }
-    }
-
-    maybeStartCallRecordingRef.current();
-  };
-
-  const buildPeerConnection = async (callId: string, side: 'caller' | 'callee', localStream: MediaStream) => {
-    const peerConnection = new RTCPeerConnection(rtcConfigRef.current);
-    peerConnectionRef.current = peerConnection;
-
-    localStream.getAudioTracks().forEach((track) => {
-      track.enabled = true;
-      peerConnection.addTrack(track, localStream);
-    });
-
-    peerConnection.ontrack = (event) => {
-      void attachRemoteStream(event);
-    };
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        callService.addIceCandidate(callId, side, event.candidate);
-      }
-    };
-
-    // Buffer ICE gather errors for deferred classification.
-    // onicecandidateerror fires for every (candidate, ICE-server) pair that doesn't work —
-    // IPv6 host addresses, the fallback STUN URL, mDNS candidates, etc.  All of these are
-    // normal and harmless when the connection ultimately succeeds via another transport.
-    // We log them immediately at debug level and only escalate to warn if ICE finally fails.
-    type IceErrorEntry = { errorCode: number; errorText: string; url: string; address: string };
-    const iceErrorLog: IceErrorEntry[] = [];
-
-    peerConnection.onicecandidateerror = (event) => {
-      const e = event as RTCPeerConnectionIceErrorEvent;
-      const entry: IceErrorEntry = {
-        errorCode: e.errorCode ?? 0,
-        errorText: e.errorText ?? '',
-        url: e.url ?? '',
-        address: (e as any).address ?? '',
-      };
-      iceErrorLog.push(entry);
-      // Debug-level: visible in DevTools but not in the browser error console.
-      console.debug('[call] ICE gather error (non-fatal while connecting)', entry);
-    };
-
-    peerConnection.oniceconnectionstatechange = () => {
-      const iceState = peerConnection.iceConnectionState;
-      console.log('[call] ICE state', iceState);
-
-      if (iceState === 'connected' || iceState === 'completed') {
-        // Every buffered error was harmless — the connection succeeded via another transport.
-        iceErrorLog.length = 0;
-      }
-
-      // Attempt ICE restart on disconnect or failure.  For 'disconnected' this often
-      // recovers without full renegotiation; for 'failed' it triggers onnegotiationneeded
-      // on the caller side which sends a fresh offer.
-      if (iceState === 'disconnected' || iceState === 'failed') {
-        peerConnection.restartIce();
-      }
-
-      if (iceState === 'failed') {
-        // Only now are the buffered gather errors actionable — escalate so they're visible.
-        if (iceErrorLog.length > 0) {
-          console.warn('[call] ICE gather errors that contributed to failure:', iceErrorLog);
-          iceErrorLog.length = 0;
-        }
-        toast.error(t('call.connection_failed'));
-      }
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      console.log('[call] Peer connection state', state);
-      if (state === 'connected') {
-        // Belt-and-suspenders: clear any lingering gather errors once the transport is up.
-        iceErrorLog.length = 0;
-      }
-      if (state === 'failed') {
-        toast.error(t('call.connection_failed'));
-      }
-    };
-
-    // Caller re-negotiates when ICE restart is needed (triggered by restartIce()).
-    // Skip the initial negotiation (no remote description yet) — that is handled by handleStartCall.
-    if (side === 'caller') {
-      peerConnection.onnegotiationneeded = async () => {
-        if (!peerConnection.currentRemoteDescription) return;
-        if (peerConnection.signalingState !== 'stable') return;
-        try {
-          const offer = await peerConnection.createOffer({ iceRestart: true });
-          await peerConnection.setLocalDescription(offer);
-          callService.saveOffer(callId, offer).catch(() => undefined);
-        } catch {
-          // ignore — if renegotiation fails the call will remain in the failed state
-        }
-      };
-    }
-
-    return peerConnection;
-  };
-
-  const renegotiateCallMedia = useCallback(async () => {
-    const pc = peerConnectionRef.current;
-    if (!pc || !activeCall) return;
-    if (pc.signalingState !== 'stable') return;
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await callService.saveOffer(activeCall.id, offer);
-    } catch {
-      // keep call alive even if renegotiation fails
-    }
-  }, [activeCall]);
-
-  const prepareLocalStream = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      localStreamRef.current = stream;
-      await ensureRemotePlaybackContext();
-      if (localAudioRef.current) {
-        localAudioRef.current.srcObject = stream;
-        localAudioRef.current.muted = true;
-        localAudioRef.current.volume = 0;
-        localAudioRef.current.play().catch(() => undefined);
-      }
-      return stream;
-    } catch {
-      toast.error(t('call.microphone_failed'));
-      throw new Error('microphone_failed');
-    }
-  };
 
   const chooseVoiceRecordingMimeType = () => {
     const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
@@ -1102,364 +644,14 @@ export default function ChatPage() {
     return options.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
   };
 
-  const handleStartCall = async () => {
-    if (!profile || !consultation || !caseId) return;
-    if (!consultation.consultantId) {
-      toast.error(t('call.no_consultant'));
-      return;
-    }
-    if (callBusy && activeCall && !TERMINAL_CALL_STATUSES.has(activeCall.status)) {
-      toast.error(t('call.busy'));
-      return;
-    }
+  // Wire recording callback into WebRTC hook so it fires when a remote track arrives
+  onRemoteTrackAttachedRef.current = () => maybeStartCallRecordingRef.current?.();
 
-    try {
-      const localStream = await prepareLocalStream();
-      const createdCallId = await callService.createCall(consultation, {
-        uid: profile.uid,
-        displayName: profile.displayName || profile.email || 'User',
-        role: profile.role as 'client' | 'consultant',
-      });
-      resetRemoteCandidates();
-      setShowActions(false);
-      setShowCallPanel(true);
-
-      const peerConnection = await buildPeerConnection(createdCallId, 'caller', localStream);
-      const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
-      await peerConnection.setLocalDescription(offer);
-      await callService.saveOffer(createdCallId, offer);
-      await chatService.sendMessage(
-        consultation.id,
-        profile.uid,
-        profile.displayName || profile.email || t(`common.${profile.role}`),
-        profile.role,
-        `📞 ${t('call.outgoing_title')}`,
-        consultation.clientId,
-        consultation.consultantId,
-        '',
-        undefined,
-        'call_log'
-      );
-
-      clearCallTimeout();
-      callTimeoutRef.current = setTimeout(async () => {
-        const latest = await callService.getCall(createdCallId);
-        if (latest?.status === 'ringing') {
-          await callService.updateCall(createdCallId, {
-            status: 'missed',
-            endedAt: new Date() as any,
-            endedBy: profile.uid,
-          });
-        }
-      }, CALL_TIMEOUT_MS);
-    } catch {
-      cleanupCallMedia();
-    }
-  };
-
-  const handleAcceptCall = async () => {
-    if (!profile || !consultation || !activeCall?.offer) return;
-    try {
-      const localStream = await prepareLocalStream();
-      setShowCallPanel(true);
-
-      const peerConnection = await buildPeerConnection(activeCall.id, 'callee', localStream);
-      lastAppliedOfferSdpRef.current = activeCall.offer.sdp ?? null;
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(activeCall.offer));
-      await flushPendingCandidates();
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      await callService.saveAnswer(activeCall.id, answer);
-      clearCallTimeout();
-      await chatService.sendMessage(
-        consultation.id,
-        profile.uid,
-        profile.displayName || profile.email || t(`common.${profile.role}`),
-        profile.role,
-        `📞 ${t('call.status_active')}`,
-        consultation.clientId,
-        consultation.consultantId,
-        '',
-        undefined,
-        'call_log'
-      );
-    } catch {
-      cleanupCallMedia();
-    }
-  };
-
-  const handleDeclineCall = async () => {
-    if (!profile || !activeCall) return;
-    await callService.updateCall(activeCall.id, {
-      status: 'declined',
-      endedAt: new Date() as any,
-      endedBy: profile.uid,
-    });
-    cleanupCallMedia();
-  };
-
-  const handleEndCall = async () => {
-    if (!profile || !activeCall) return;
-    await callService.updateCall(activeCall.id, {
-      status: 'ended',
-      endedAt: new Date() as any,
-      endedBy: profile.uid,
-    });
-    cleanupCallMedia({ preservePanel: true });
-  };
-
-  const toggleMute = () => {
-    if (!localStreamRef.current) return;
-    const shouldMute = !isMuted;
-    localStreamRef.current.getAudioTracks().forEach(track => {
-      track.enabled = !shouldMute;
-    });
-    setIsMuted(shouldMute);
-  };
-
-  const toggleVideo = async () => {
-    const pc = peerConnectionRef.current;
-    if (!pc) return;
-
-    if (videoEnabled) {
-      // Remove video tracks — exclude the screen share track to avoid killing it accidentally
-      const screenShareTrack = screenStreamRef.current?.getVideoTracks()[0];
-      const senders = pc.getSenders().filter(
-        (s) => s.track?.kind === 'video' && s.track !== screenShareTrack
-      );
-      senders.forEach((s) => pc.removeTrack(s));
-      localStreamRef.current?.getVideoTracks().forEach((t) => {
-        t.stop();
-        localStreamRef.current?.removeTrack(t);
-      });
-      if (localVideoRef.current) localVideoRef.current.srcObject = null;
-      if (localVideoFallbackRef.current) localVideoFallbackRef.current.srcObject = null;
-      setVideoEnabled(false);
-      await renegotiateCallMedia();
-    } else {
-      try {
-        const videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-        const videoTrack = videoStream.getVideoTracks()[0];
-        localStreamRef.current?.addTrack(videoTrack);
-        pc.addTrack(videoTrack, localStreamRef.current!);
-        [localVideoRef.current, localVideoFallbackRef.current].forEach((el) => {
-          if (!el) return;
-          el.srcObject = localStreamRef.current;
-          el.play().catch(() => {});
-        });
-        setVideoEnabled(true);
-        await renegotiateCallMedia();
-      } catch {
-        toast.error(t('call.camera_failed') || 'Failed to access camera');
-      }
-    }
-  };
-
-  const toggleScreenShare = async () => {
-    const pc = peerConnectionRef.current;
-    if (!pc) return;
-    if (!canScreenShare) {
-      toast.error(t('chat.screenshare_mobile_unsupported'));
-      return;
-    }
-
-    if (screenSharing) {
-      // Stop screen share — restore camera if video was enabled, else remove track
-      const screenTracks = screenStreamRef.current?.getTracks() ?? [];
-      screenTracks.forEach((t) => t.stop());
-      screenStreamRef.current = null;
-
-      const videoSenders = pc.getSenders().filter((s) => s.track?.kind === 'video');
-      if (videoEnabled && localStreamRef.current) {
-        const camTrack = localStreamRef.current.getVideoTracks()[0];
-        if (camTrack && videoSenders[0]) {
-          await videoSenders[0].replaceTrack(camTrack).catch(() => {});
-        }
-      } else {
-        videoSenders.forEach((s) => pc.removeTrack(s));
-        await renegotiateCallMedia();
-      }
-      setScreenSharing(false);
-    } else {
-      try {
-        const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({
-          video: { cursor: 'always' },
-          audio: false,
-        });
-        screenStreamRef.current = screenStream;
-        const screenTrack: MediaStreamTrack = screenStream.getVideoTracks()[0];
-
-        const videoSenders = pc.getSenders().filter((s) => s.track?.kind === 'video');
-        if (videoSenders.length > 0) {
-          await videoSenders[0].replaceTrack(screenTrack).catch(() => {});
-        } else {
-          pc.addTrack(screenTrack, screenStream);
-          // replaceTrack doesn't need renegotiation, but addTrack does.
-          // The caller's onnegotiationneeded fires automatically; the callee has no handler,
-          // so renegotiateCallMedia is called explicitly for both sides.
-          await renegotiateCallMedia();
-        }
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream;
-          localVideoRef.current.play().catch(() => {});
-        }
-        if (localVideoFallbackRef.current) {
-          localVideoFallbackRef.current.srcObject = screenStream;
-          localVideoFallbackRef.current.play().catch(() => {});
-        }
-
-        screenTrack.onended = () => {
-          const activePc = peerConnectionRef.current;
-          screenStreamRef.current = null;
-          if (activePc) {
-            const videoSenders = activePc.getSenders().filter((s) => s.track?.kind === 'video');
-            const camTrack = localStreamRef.current?.getVideoTracks()[0];
-            if (camTrack && videoSenders[0]) {
-              videoSenders[0].replaceTrack(camTrack).catch(() => {});
-            } else {
-              videoSenders.forEach((s) => activePc.removeTrack(s));
-              void renegotiateCallMedia();
-            }
-          }
-          setScreenSharing(false);
-        };
-
-        setScreenSharing(true);
-      } catch {
-        // User cancelled or permission denied — not an error
-        setScreenSharing(false);
-      }
-    }
-  };
-
+  // Trigger recording when call transitions to active (e.g. both sides connected)
   useEffect(() => {
-    if (!activeCall || !profile || !canOpenCall) return;
+    if (activeCall?.status === 'active') maybeStartCallRecording();
+  }, [activeCall?.status, maybeStartCallRecording]);
 
-    // Caller: apply remote answer (initial connect + ICE-restart renegotiation).
-    // Guard against applying our own answer when we acted as answerer during callee-initiated renegotiation.
-    if (
-      activeCall.answer?.sdp &&
-      isCallInitiator &&
-      peerConnectionRef.current &&
-      peerConnectionRef.current.signalingState !== 'closed' &&
-      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current &&
-      activeCall.answer.sdp !== peerConnectionRef.current.localDescription?.sdp
-    ) {
-      lastAppliedAnswerSdpRef.current = activeCall.answer.sdp;
-      peerConnectionRef.current
-        .setRemoteDescription(new RTCSessionDescription(activeCall.answer as RTCSessionDescriptionInit))
-        .then(() => flushPendingCandidates())
-        .catch(() => undefined);
-    }
-
-    // Callee: apply remote answer when the callee initiated renegotiation (e.g. screen share).
-    // The callee is in have-local-offer state after sending its own offer; the caller responded with an answer.
-    if (
-      activeCall.answer?.sdp &&
-      !isCallInitiator &&
-      peerConnectionRef.current?.signalingState === 'have-local-offer' &&
-      activeCall.answer.sdp !== lastAppliedAnswerSdpRef.current &&
-      activeCall.answer.sdp !== peerConnectionRef.current.localDescription?.sdp
-    ) {
-      lastAppliedAnswerSdpRef.current = activeCall.answer.sdp;
-      peerConnectionRef.current
-        .setRemoteDescription(new RTCSessionDescription(activeCall.answer as RTCSessionDescriptionInit))
-        .then(() => flushPendingCandidates())
-        .catch(() => undefined);
-    }
-
-    // Either side: re-apply remote offer updates (initial offer, ICE restart, or callee-initiated renegotiation).
-    // Uses updateCall directly to avoid resetting acceptedAt/status during mid-call renegotiation.
-    if (
-      activeCall.offer?.sdp &&
-      peerConnectionRef.current &&
-      peerConnectionRef.current.signalingState !== 'closed' &&
-      activeCall.offer.sdp !== lastAppliedOfferSdpRef.current &&
-      activeCall.offer.sdp !== peerConnectionRef.current.localDescription?.sdp &&
-      peerConnectionRef.current.signalingState === 'stable'
-    ) {
-      const pc = peerConnectionRef.current;
-      lastAppliedOfferSdpRef.current = activeCall.offer.sdp;
-      const isRenegotiation = activeCall.status === 'active';
-      pc.setRemoteDescription(new RTCSessionDescription(activeCall.offer as RTCSessionDescriptionInit))
-        .then(() => pc.createAnswer())
-        .then((answer) => pc.setLocalDescription(answer).then(() =>
-          isRenegotiation
-            ? callService.updateCall(activeCall.id, { answer: { type: 'answer', sdp: answer.sdp || '' } })
-            : callService.saveAnswer(activeCall.id, answer)
-        ))
-        .catch(() => undefined);
-    }
-
-    if (activeCall.status === 'active') {
-      clearCallTimeout();
-      setShowCallPanel(true);
-      if (!callTimerRef.current) {
-        const callStartedAt = activeCall.acceptedAt?.toMillis?.() || activeCall.createdAt?.toMillis?.() || Date.now();
-        setCallElapsed(Math.max(0, Math.floor((Date.now() - callStartedAt) / 1000)));
-        callTimerRef.current = setInterval(() => {
-          setCallElapsed(Math.max(0, Math.floor((Date.now() - callStartedAt) / 1000)));
-        }, 1000);
-      }
-      maybeStartCallRecording();
-    }
-
-    const previousStatus = finalizedCallStatusesRef.current.get(activeCall.id);
-    if (TERMINAL_CALL_STATUSES.has(activeCall.status) && previousStatus !== activeCall.status) {
-      finalizedCallStatusesRef.current.set(activeCall.id, activeCall.status);
-      clearCallTimeout();
-      clearCallTimer();
-      if (activeCall.status === 'declined' && activeCall.endedBy !== profile.uid) {
-        toast.error(t('call.declined_remote'));
-      }
-      if (activeCall.status === 'ended' && activeCall.endedBy !== profile.uid) {
-        toast.error(t('call.ended_remote'));
-      }
-      if (activeCall.status === 'missed') {
-        toast.error(t('call.missed'));
-      }
-      cleanupCallMedia({ preservePanel: true });
-    }
-  }, [activeCall, canOpenCall, cleanupCallMedia, isCallInitiator, maybeStartCallRecording, profile, t]);
-
-  useEffect(() => {
-    if (!activeCall?.id || !canOpenCall) return;
-
-    // Reset candidate tracking exactly once per unique call ID so that candidates
-    // queued while the call was ringing are not discarded when the callee accepts.
-    if (lastResetCallIdRef.current !== activeCall.id) {
-      lastResetCallIdRef.current = activeCall.id;
-      remoteCandidateIdsRef.current = new Set();
-      pendingCandidatesRef.current = [];
-      lastAppliedOfferSdpRef.current = null;
-      lastAppliedAnswerSdpRef.current = null;
-    }
-
-    const sourceRole: 'caller' | 'callee' = isCallInitiator ? 'callee' : 'caller';
-
-    const unsubscribeCandidates = callService.subscribeToIceCandidates(activeCall.id, sourceRole, async (candidates) => {
-      for (const candidate of candidates) {
-        if (remoteCandidateIdsRef.current.has(candidate.id)) continue;
-        remoteCandidateIdsRef.current.add(candidate.id);
-        if (peerConnectionRef.current?.remoteDescription) {
-          try {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate({
-              candidate: candidate.candidate,
-              sdpMid: candidate.sdpMid,
-              sdpMLineIndex: candidate.sdpMLineIndex,
-            }));
-          } catch {
-            pendingCandidatesRef.current.push(candidate);
-          }
-        } else {
-          pendingCandidatesRef.current.push(candidate);
-        }
-      }
-    });
-
-    return () => unsubscribeCandidates();
-  }, [activeCall?.id, isCallInitiator, canOpenCall]);
 
   const currentCallTitle = useMemo(() => {
     if (!activeCall) return t('call.start');
