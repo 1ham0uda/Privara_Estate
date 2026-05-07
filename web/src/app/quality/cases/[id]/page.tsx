@@ -248,7 +248,12 @@ export default function QualityCaseReview() {
                                 <Mic className="w-4 h-4 text-indigo-500" />
                               </div>
                               <div>
-                                <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
+                                  {call.createdAt && (
+                                    <p className="text-[10px] text-brand-slate">{formatDate(call.createdAt, language)}</p>
+                                  )}
+                                </div>
                                 {durationMin && (
                                   <p className="text-[10px] text-brand-slate">{durationMin}</p>
                                 )}

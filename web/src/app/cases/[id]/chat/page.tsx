@@ -543,12 +543,11 @@ export default function ChatPage() {
     mediaMixRef.current = { audioContext, destination, remoteSource };
 
     const visualStream = startCallVisualCapture();
-    const composedStream = visualStream
-      ? new MediaStream([
-          ...visualStream.getVideoTracks(),
-          ...destination.stream.getAudioTracks(),
-        ])
-      : destination.stream;
+    const composedStream = destination.stream;
+    if (visualStream) {
+      const videoTrack = visualStream.getVideoTracks()[0];
+      if (videoTrack) composedStream.addTrack(videoTrack);
+    }
 
     const mimeType = chooseCallRecordingMimeType();
     const recorder = mimeType
