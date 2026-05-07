@@ -238,9 +238,6 @@ export default function ChatPage() {
   };
 
   const startCallVisualCapture = (): MediaStream | null => {
-    const primaryVideo = remoteVideoRef.current;
-    if (!primaryVideo) return null;
-
     const canvas = document.createElement('canvas');
     canvas.width = 1280;
     canvas.height = 720;
@@ -253,13 +250,10 @@ export default function ChatPage() {
       ctx.fillStyle = '#0b1220';
       ctx.fillRect(0, 0, width, height);
 
-      if (primaryVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      // Read ref each frame so video added mid-call is captured automatically
+      const primaryVideo = remoteVideoRef.current;
+      if (primaryVideo && primaryVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         ctx.drawImage(primaryVideo, 0, 0, width, height);
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 36px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Waiting for video...', width / 2, height / 2);
       }
 
       const localVideo = localVideoRef.current;

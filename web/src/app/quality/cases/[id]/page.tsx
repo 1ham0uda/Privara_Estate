@@ -234,31 +234,43 @@ export default function QualityCaseReview() {
                   <Mic className="w-6 h-6 text-indigo-500" /> {t('quality.call_recordings')}
                 </h2>
                 {recordedCalls.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {recordedCalls.map((call, idx) => {
                       const url = call.recordingUrl!;
+                      const durationMin = call.durationSec
+                        ? `${Math.floor(call.durationSec / 60)}:${String(call.durationSec % 60).padStart(2, '0')}`
+                        : null;
                       return (
-                        <div key={call.id} className="p-4 bg-cloud rounded-xl flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                              <Mic className="w-5 h-5 text-indigo-500" />
+                        <div key={call.id} className="bg-cloud rounded-xl overflow-hidden">
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                                <Mic className="w-4 h-4 text-indigo-500" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
+                                {durationMin && (
+                                  <p className="text-[10px] text-brand-slate">{durationMin}</p>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-bold">{t('quality.call_number')} {idx + 1}</p>
-                              <p className="text-[10px] text-brand-slate">{t('quality.recorded_call')}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleAudio(url)}
-                              className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-600/20 hover:scale-105 transition-transform"
+                            <a
+                              href={url}
+                              download
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2 text-brand-slate hover:text-ink"
                             >
-                              {playingAudio === url ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                            </button>
-                            <a href={url} download target="_blank" rel="noreferrer" className="p-2 text-brand-slate hover:text-ink">
                               <Download className="w-5 h-5" />
                             </a>
                           </div>
+                          {/* Video player — recordings are video/webm with screen share + audio */}
+                          <video
+                            src={url}
+                            controls
+                            playsInline
+                            className="w-full max-h-80 bg-black"
+                          />
                         </div>
                       );
                     })}
