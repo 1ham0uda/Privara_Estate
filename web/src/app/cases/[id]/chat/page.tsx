@@ -535,6 +535,7 @@ export default function ChatPage() {
     if (callRecorderRef.current && callRecorderRef.current.state !== 'inactive') return;
 
     const audioContext = new AudioContext();
+    audioContext.resume().catch(() => undefined);
     const destination = audioContext.createMediaStreamDestination();
     const localSource = audioContext.createMediaStreamSource(localStreamRef.current);
     const remoteSource = audioContext.createMediaStreamSource(remoteStreamRef.current);
@@ -550,9 +551,18 @@ export default function ChatPage() {
     }
 
     const mimeType = chooseCallRecordingMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(composedStream, { mimeType })
-      : new MediaRecorder(composedStream);
+    let recorder: MediaRecorder;
+    try {
+      recorder = mimeType
+        ? new MediaRecorder(composedStream, { mimeType })
+        : new MediaRecorder(composedStream);
+    } catch (e) {
+      console.error('[recording] MediaRecorder creation failed', e);
+      audioContext.close().catch(() => undefined);
+      mediaMixRef.current = null;
+      stopCallVisualCapture();
+      return;
+    }
 
     callRecorderRef.current = recorder;
     callRecordingChunksRef.current = [];
@@ -570,6 +580,10 @@ export default function ChatPage() {
     };
 
     recorder.onstop = async () => {
+      // Close the AudioContext we own — do it here so cleanupCallMedia doesn't race
+      audioContext.close().catch(() => undefined);
+      if (mediaMixRef.current?.audioContext === audioContext) mediaMixRef.current = null;
+
       const meta = recordingMetaRef.current;
       const currentMimeType = recorder.mimeType || 'video/webm';
       const blob = new Blob(callRecordingChunksRef.current, { type: currentMimeType });
@@ -610,7 +624,17 @@ export default function ChatPage() {
       }
     };
 
-    recorder.start(1000);
+    try {
+      recorder.start(1000);
+    } catch (e) {
+      console.error('[recording] recorder.start() failed', e);
+      callRecorderRef.current = null;
+      recordingMetaRef.current = null;
+      audioContext.close().catch(() => undefined);
+      mediaMixRef.current = null;
+      stopCallVisualCapture();
+      return;
+    }
     callService.updateCall(activeCall.id, { recordingStatus: 'recording' }).catch(() => undefined);
   }, [activeCall, consultation, isConsultantRecorder, profile, t]);
 
@@ -644,6 +668,16 @@ export default function ChatPage() {
   useEffect(() => {
     if (activeCall?.status === 'active') maybeStartCallRecording();
   }, [activeCall?.status, maybeStartCallRecording]);
+
+  // Stop recording when the call ends so onstop fires and the file gets uploaded
+  useEffect(() => {
+    if (!activeCall || !TERMINAL_CALL_STATUSES.has(activeCall.status)) return;
+    const recorder = callRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive' || recorderStoppingRef.current) return;
+    recorderStoppingRef.current = true;
+    callService.updateCall(activeCall.id, { recordingStatus: 'processing' }).catch(() => undefined);
+    recorder.stop();
+  }, [activeCall?.status]);
 
 
   const currentCallTitle = useMemo(() => {

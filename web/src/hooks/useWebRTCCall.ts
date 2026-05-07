@@ -341,11 +341,8 @@ export function useWebRTCCall({
         }
       });
 
-      // Audio mix (recording)
-      if (mediaMixRef.current) {
-        mediaMixRef.current.audioContext.close().catch(() => undefined);
-        mediaMixRef.current = null;
-      }
+      // Audio mix — AudioContext lifecycle is owned by the recorder's onstop handler in page.tsx
+      mediaMixRef.current = null;
 
       stopRemotePlayback();
       resetSignalingState();
