@@ -192,15 +192,35 @@ export const callService = {
     const subcollection = sourceRole === 'caller' ? 'callerCandidates' : 'calleeCandidates';
     const q = query(collection(db, 'calls', callId, subcollection), orderBy('createdAt', 'asc'));
 
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        callback(snapshot.docs.map((docSnap) => mapCallSnapshot<CallIceCandidate>(docSnap)));
-      },
-      (error) => {
-        logCallError('subscribeToIceCandidates', error);
-      }
-    );
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsub: (() => void) | null = null;
+    let cancelled = false;
+
+    const subscribe = (attempt: number) => {
+      unsub = onSnapshot(
+        q,
+        (snapshot) => {
+          callback(snapshot.docs.map((docSnap) => mapCallSnapshot<CallIceCandidate>(docSnap)));
+        },
+        (error) => {
+          logCallError('subscribeToIceCandidates', error);
+          // Retry on permission errors — Firestore may deny access briefly during
+          // call document propagation, then allow once the write is visible.
+          if (!cancelled && attempt < 4) {
+            const delay = Math.min(1000 * 2 ** attempt, 8000);
+            retryTimer = setTimeout(() => subscribe(attempt + 1), delay);
+          }
+        }
+      );
+    };
+
+    subscribe(0);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      unsub?.();
+    };
   },
 
   /**

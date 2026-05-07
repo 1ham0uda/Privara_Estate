@@ -457,7 +457,6 @@ export function useWebRTCCall({
 
     // Video tracks
     if (remoteStream.getVideoTracks().length > 0) {
-      setRemoteHasVideo(true);
       remoteStream.getVideoTracks().forEach((track) => {
         track.onended = () => {
           if (!remoteStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live')) {
@@ -465,11 +464,10 @@ export function useWebRTCCall({
           }
         };
       });
-      [remoteVideoRef.current, remoteVideoFallbackRef.current].forEach((el) => {
-        if (!el) return;
-        el.srcObject = remoteStream;
-        el.play().catch(() => {});
-      });
+      // setRemoteHasVideo triggers a React re-render that mounts the <video> element.
+      // The video refs are null until after that render, so attachment is deferred
+      // to a useEffect that fires once the element is in the DOM.
+      setRemoteHasVideo(true);
     }
 
     // Audio playback via Web Audio (avoids autoplay policy issues)
@@ -504,6 +502,21 @@ export function useWebRTCCall({
     // Notify recording hook
     onRemoteTrackAttachedRef.current();
   }, [ensureRemotePlaybackContext, t]);
+
+  // ─── Attach remote video stream once the <video> element is mounted ───────
+  // The <video> element is conditionally rendered only after remoteHasVideo
+  // flips to true. At the time ontrack fires, the element doesn't exist yet,
+  // so we re-attach here after React commits the render.
+  useEffect(() => {
+    if (!remoteHasVideo) return;
+    const stream = remoteStreamRef.current;
+    if (!stream) return;
+    [remoteVideoRef.current, remoteVideoFallbackRef.current].forEach((el) => {
+      if (!el || el.srcObject === stream) return;
+      el.srcObject = stream;
+      el.play().catch(() => {});
+    });
+  }, [remoteHasVideo]);
 
   // ─── ICE health monitoring & restart ─────────────────────────────────────
 

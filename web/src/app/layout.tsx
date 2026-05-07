@@ -35,6 +35,10 @@ const dmMono = DM_Mono({
 export const metadata: Metadata = {
   title: 'Real Real Estate | Independent Advisory · Egypt',
   description: 'Fee-based, unbiased real estate advisory in Egypt. No commissions, no hidden agenda — one consultation fee, one honest answer.',
+  icons: {
+    icon: '/favicon.png',
+    apple: '/icons/icon-192.png',
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
