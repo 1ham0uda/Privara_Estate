@@ -274,7 +274,7 @@ service cloud.firestore {
 
     function isValidCall(data) {
       return hasRequiredFields(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'status', 'createdAt', 'updatedAt', 'recordingStatus']) &&
-        hasOnlyAllowedFields(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'status', 'createdAt', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer']) &&
+        hasOnlyAllowedFields(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'status', 'createdAt', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer', 'renegotiationRequest']) &&
         data.consultationId is string &&
         data.clientId is string &&
         data.consultantId is string &&
@@ -294,7 +294,8 @@ service cloud.firestore {
         data.recordingStatus in ['not_started', 'recording', 'processing', 'ready', 'failed'] &&
         (!('recordingUrl' in data) || data.recordingUrl == null || data.recordingUrl == '' || isValidUrl(data.recordingUrl)) &&
         (!('offer' in data) || data.offer == null || data.offer is map) &&
-        (!('answer' in data) || data.answer == null || data.answer is map);
+        (!('answer' in data) || data.answer == null || data.answer is map) &&
+        (!('renegotiationRequest' in data) || data.renegotiationRequest == null || data.renegotiationRequest is map);
     }
 
     function isValidCallCandidate(data) {
@@ -321,7 +322,7 @@ service cloud.firestore {
       return isValidCall(request.resource.data) &&
         areImmutableFieldsUnchanged(['consultationId', 'clientId', 'consultantId', 'initiatedBy', 'initiatedByName', 'initiatedByRole', 'type', 'createdAt']) &&
         (isAdmin() || ((request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.consultantId) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer']))) ;
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'acceptedAt', 'endedAt', 'endedBy', 'callerJoinedAt', 'calleeJoinedAt', 'durationSec', 'recordingStatus', 'recordingUrl', 'offer', 'answer', 'renegotiationRequest']))) ;
     }
 
     function currentUserRole() {
